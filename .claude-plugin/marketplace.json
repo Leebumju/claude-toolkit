@@ -71,6 +71,21 @@
         "legacy"
       ],
       "category": "workflow"
+    },
+    {
+      "name": "skill-forge",
+      "source": "./plugins/skill-forge",
+      "description": "만든 스킬을 점검한다 — 무력한 문장·빠진 흐름·죽은 참조를 찾는다. 읽기 전용",
+      "version": "0.1.0",
+      "author": {
+        "name": "Leebumju"
+      },
+      "keywords": [
+        "skill",
+        "audit",
+        "meta"
+      ],
+      "category": "workflow"
     }
   ]
 }
