@@ -56,7 +56,7 @@
 
 | 스킬 | 하는 일 | JD 근거 | 회사앱 | 과제 | 상태 |
 |---|---|---|---|---|---|
-| `test-seams` | 테스트가 **닿을 자리**를 찾아 만든다. Swift Testing / XCTest 갈림길 포함 | 당근 `Testable`(요건), 토스·뱅크샐러드가 Swift Testing 과 XCTest 를 **병기** | 테스트가 절반뿐 | **과제 최대 실패 지점** | 🔜 |
+| `test-seams` | 테스트가 **닿을 자리**를 찾아 만든다. 붙인 테스트를 뒤집어서 실제로 지키는지 확인한다 | 당근 `Testable`(요건), 토스·뱅크샐러드가 Swift Testing 과 XCTest 를 **병기** | 테스트가 절반뿐 | **과제 최대 실패 지점** | ✅ |
 | `behavior-diff` | 리팩토링 전후 동작 동일성을 기계로 확인 (로그 대조·스냅샷) | 마이그레이션 2건의 전제 | 리팩토링마다 | 드묾 | ⏸ |
 | `crash-triage` | 크래시 원인 좁히기. 스레드·continuation·중복 키 | 없음 (실전 근거) | 반복 발생 | 과제에서 2건 발견 | ⏸ |
 | `skill-audit` | 만든 스킬에 무엇이 빠졌는지 점검. 읽기 전용 | 없음 (도구 위생) | — | — | ✅ |
@@ -106,14 +106,14 @@
 ## 다음 순서
 
 ```
-1. test-seams        ← A·B 양쪽에서 참조되고 있다. 다른 스킬이 이걸 기다린다
-2. async-migration
-3. i18n-audit
+1. async-migration
+2. i18n-audit
+3. di-introduce 판단  ← test-seams 를 만들었으니 남는 게 있는지 본다
 ```
 
-`test-seams` 를 먼저 하는 이유는 `legacy-port`·`modularize-ios`·`measure-ios` 세 곳이
-이미 "테스트 자리가 없으면 여기로" 라고 가리키고 있기 때문이다.
-가리키는 대상이 없으면 그 줄이 폴백으로만 동작한다.
+`test-seams` 를 먼저 한 이유는 `legacy-port`·`modularize-ios`·`measure-ios` 세 곳이
+이미 "테스트 자리가 없으면 여기로" 라고 가리키고 있었기 때문이다.
+가리키는 대상이 없으면 그 줄이 폴백으로만 동작한다. 지금은 셋 다 실재하는 대상을 가리킨다.
 
 ## 스킬을 하나 만들 때마다 하는 것
 
