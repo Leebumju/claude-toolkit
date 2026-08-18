@@ -1,0 +1,8 @@
+{
+  "name": "code-lens",
+  "version": "0.1.0",
+  "description": "렌즈 하나로 좁혀 개선점만 보고하는 읽기 전용 에이전트",
+  "author": { "name": "Leebumju" },
+  "license": "MIT",
+  "keywords": ["review", "read-only"]
+}

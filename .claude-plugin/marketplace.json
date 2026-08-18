@@ -1,0 +1,46 @@
+{
+  "name": "bumju-toolkit",
+  "id": "bumju-toolkit",
+  "owner": {
+    "name": "Leebumju"
+  },
+  "metadata": {
+    "description": "필요한 것만 골라 켜는 Claude Code 스킬 모음. 계측·검토·과제 전형용으로 나눠 두었다",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "ios-measure",
+      "source": "./plugins/ios-measure",
+      "description": "iOS 성능을 추측이 아니라 수치로 확인한다. 재현 → 계측 → 측정 → 수정 → 재측정 순서를 강제한다",
+      "version": "0.1.0",
+      "author": {
+        "name": "Leebumju"
+      },
+      "keywords": ["ios", "performance", "measurement", "instrumentation"],
+      "category": "workflow"
+    },
+    {
+      "name": "code-lens",
+      "source": "./plugins/code-lens",
+      "description": "렌즈를 하나로 좁혀 개선점만 찾는 읽기 전용 에이전트. 언어 무관",
+      "version": "0.1.0",
+      "author": {
+        "name": "Leebumju"
+      },
+      "keywords": ["review", "read-only", "agent"],
+      "category": "workflow"
+    },
+    {
+      "name": "hiring-assignment",
+      "source": "./plugins/hiring-assignment",
+      "description": "채용 과제 전형용. 시작 30분 절차, 제출 직전 기계 검사, 채점자 관점 적대적 평가",
+      "version": "0.1.0",
+      "author": {
+        "name": "Leebumju"
+      },
+      "keywords": ["assignment", "submission", "checklist", "critique"],
+      "category": "workflow"
+    }
+  ]
+}

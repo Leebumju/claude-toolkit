@@ -1,0 +1,8 @@
+{
+  "name": "hiring-assignment",
+  "version": "0.1.0",
+  "description": "채용 과제 시작·제출 점검·적대적 평가. 채점 기준은 회사별 프로필로 교체한다",
+  "author": { "name": "Leebumju" },
+  "license": "MIT",
+  "keywords": ["assignment", "submission", "critique"]
+}
