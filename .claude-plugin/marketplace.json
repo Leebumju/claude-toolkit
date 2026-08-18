@@ -1,6 +1,5 @@
 {
   "name": "bumju-toolkit",
-  "id": "bumju-toolkit",
   "owner": {
     "name": "Leebumju"
   },
@@ -59,8 +58,8 @@
     {
       "name": "ios-modernize",
       "source": "./plugins/ios-modernize",
-      "description": "레거시를 신규 패턴으로 옮기는 절차 — 기준선 기록 후 동작 보존 대조",
-      "version": "0.1.0",
+      "description": "레거시를 신규 패턴으로 옮기고, 모듈 경계를 세우고, 테스트가 닿을 자리를 만든다",
+      "version": "0.2.0",
       "author": {
         "name": "Leebumju"
       },
@@ -68,7 +67,8 @@
         "ios",
         "refactoring",
         "migration",
-        "legacy"
+        "legacy",
+        "testing"
       ],
       "category": "workflow"
     },
