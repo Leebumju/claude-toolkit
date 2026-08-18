@@ -42,7 +42,7 @@
 |---|---|---|---|---|---|
 | `legacy-port` | 레거시 화면 1개를 신규 패턴으로 옮기고 **동작 보존을 검증** (분기·순서·타이밍·에러·localized·cancel) | 뱅크샐러드 주요업무 1번, 강남언니 주요업무 2번 | 매일 하는 일 | 기존 코드 개선 과제 | ✅ |
 | `modularize-ios` | 단일 타깃 → Tuist 모듈. 공유물 식별 → 아래로 내리기 → **위반 import 로 경계 검증** | **7건 중 5건** | 로드맵에 있고 미착수 | 실측 21분 | ✅ |
-| `async-migration` | 콜백/Rx → Swift Concurrency. `async let` 취소·continuation 함정 포함 | 뱅크샐러드·신한카드·강남언니 | 명시된 장기 과제 | 간접 | 🔜 |
+| `async-migration` | 콜백/Rx → Swift Concurrency. **취소가 실제로 전파되는지 확인하는 것까지**가 절차다 | 뱅크샐러드·신한카드·강남언니 | 명시된 장기 과제 | 간접 | ✅ |
 | `di-introduce` | 싱글턴/직접 생성 → 주입 구조. 테스트 대체물 넣을 자리 만들기 | 당근 우대(DI 설계), Clean Architecture 3건 | 레거시 전반 | 테스트 가능성 | ⏸ |
 
 **결정 — `async-migration` 은 `legacy-port` 와 따로 둔다.** 특수 사례이긴 하지만
@@ -106,9 +106,9 @@
 ## 다음 순서
 
 ```
-1. async-migration
-2. i18n-audit
-3. di-introduce 판단  ← test-seams 를 만들었으니 남는 게 있는지 본다
+1. i18n-audit
+2. di-introduce 판단   ← test-seams 를 만들었으니 남는 게 있는지 본다
+3. crash-triage        ← async-migration 이 취소·continuation 을 다뤘으니 남는 게 있는지 본다
 ```
 
 `test-seams` 를 먼저 한 이유는 `legacy-port`·`modularize-ios`·`measure-ios` 세 곳이

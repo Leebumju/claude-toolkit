@@ -1,6 +1,6 @@
 {
   "name": "ios-modernize",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "레거시 iOS 코드를 신규 패턴으로 옮기는 절차. 동작 보존과 테스트 자리를 기계적으로 검증한다",
   "author": {
     "name": "Leebumju"
