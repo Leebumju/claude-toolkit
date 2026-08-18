@@ -17,7 +17,12 @@
       "author": {
         "name": "Leebumju"
       },
-      "keywords": ["ios", "performance", "measurement", "instrumentation"],
+      "keywords": [
+        "ios",
+        "performance",
+        "measurement",
+        "instrumentation"
+      ],
       "category": "workflow"
     },
     {
@@ -28,7 +33,11 @@
       "author": {
         "name": "Leebumju"
       },
-      "keywords": ["review", "read-only", "agent"],
+      "keywords": [
+        "review",
+        "read-only",
+        "agent"
+      ],
       "category": "workflow"
     },
     {
@@ -39,7 +48,28 @@
       "author": {
         "name": "Leebumju"
       },
-      "keywords": ["assignment", "submission", "checklist", "critique"],
+      "keywords": [
+        "assignment",
+        "submission",
+        "checklist",
+        "critique"
+      ],
+      "category": "workflow"
+    },
+    {
+      "name": "ios-modernize",
+      "source": "./plugins/ios-modernize",
+      "description": "레거시를 신규 패턴으로 옮기는 절차 — 기준선 기록 후 동작 보존 대조",
+      "version": "0.1.0",
+      "author": {
+        "name": "Leebumju"
+      },
+      "keywords": [
+        "ios",
+        "refactoring",
+        "migration",
+        "legacy"
+      ],
       "category": "workflow"
     }
   ]

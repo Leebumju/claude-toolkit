@@ -1,0 +1,8 @@
+{
+  "name": "ios-modernize",
+  "version": "0.1.0",
+  "description": "레거시 iOS 코드를 신규 패턴으로 옮기는 절차. 동작 보존을 기계적으로 검증한다",
+  "author": { "name": "Leebumju" },
+  "license": "MIT",
+  "keywords": ["ios", "refactoring", "migration", "legacy", "tuist"]
+}
