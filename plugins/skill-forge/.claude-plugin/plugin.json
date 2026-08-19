@@ -1,8 +1,15 @@
 {
   "name": "skill-forge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "만든 스킬에 무엇이 빠졌는지 점검한다. 읽기 전용",
-  "author": { "name": "Leebumju" },
+  "author": {
+    "name": "Leebumju"
+  },
   "license": "MIT",
-  "keywords": ["skill", "audit", "meta", "read-only"]
+  "keywords": [
+    "skill",
+    "audit",
+    "meta",
+    "read-only"
+  ]
 }
