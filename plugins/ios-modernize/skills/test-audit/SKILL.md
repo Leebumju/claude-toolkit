@@ -52,8 +52,27 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 ### 기록은 파일로 남긴다 — 재개 지점
 
 `.claude/test-audit/<대상>.md` 에 적는다. **추적되는 경로에 두지 않는다.**
-`.gitignore` 에 `.claude/` 가 있는지 먼저 확인한다
-(`git check-ignore -q .claude/x && echo 무시됨`). 없으면 먼저 추가한다.
+**파일을 만든 뒤 그 파일이 실제로 안 뜨는지 확인한다.**
+
+```sh
+git status --porcelain <내가 만든 파일>   # 아무것도 안 나와야 한다
+```
+
+`git check-ignore` 만으로는 부족하다. 이유가 둘이다.
+
+**하나 — 디렉토리로 물으면 답이 거꾸로 나온다.** 실측하면 이렇다.
+
+```
+git check-ignore -v .claude          → rc=1  (무시 안 됨으로 보인다)
+git check-ignore -v .claude/x/y.md   → rc=0  (.gitignore 규칙을 짚는다)
+```
+
+디렉토리 자체는 무시 대상으로 보고되지 않는다. **파일로 물어야 규칙이 나온다.**
+
+**둘 — `.gitignore` 에 있어도 이미 추적 중인 파일은 계속 추적된다.**
+실제 저장소에서 `.claude/` 가 무시 대상인데 그 안에 추적 중인 파일이 10개 있었다.
+
+그래서 **내가 만든 파일을 `git status --porcelain` 으로 직접 묻는다.** 그게 유일한 확답이다.
 
 **조작 중에 대화가 끊기는 것이 이 절차의 최대 위험이다.** 프로덕션이 깨진 상태로 남는다.
 그래서 조작 내용과 되돌림 여부를 매 사이클 파일에 적는다.
@@ -109,15 +128,34 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 
 **여기서 끝날 수도 있다.** 안 돌고 있는 테스트는 조작해도 아무 반응이 없다.
 
-```sh
-# 선언 수
-grep -rc '@Test\|func test' <테스트 경로>/*.swift | awk -F: '{s+=$2} END {print s}'
+**네 값을 나눠 본다.** 두 값만 비교하면 오진한다.
 
-# 실행 수 ← 문서와 보고에 쓸 값은 이것이다
+```sh
+TR="<테스트 루트>"        # 공백이 있으면 반드시 인용부호
+
+# ① 선언 수 — 재귀로 센다
+grep -rc '@Test\|func test' --include='*.swift' "$TR" | awk -F: '{s+=$2} END {print s}'
+
+# ② 그중 주석 처리된 것
+grep -rcE '^\s*//.*func test' --include='*.swift' "$TR" | awk -F: '{s+=$2} END {print s}'
+
+# ③ 건너뛰는 것
+grep -rc 'XCTSkip\|\.disabled(' --include='*.swift' "$TR" | awk -F: '{s+=$2} END {print s}'
+
+# ④ 실행 수 ← 문서와 보고에 쓸 값은 이것이다
 xcodebuild test ... 2>&1 | grep 'Test run with'
 ```
 
-두 값이 다르면 **테스트 파일이 타깃에 붙지 않은 것**이다. 프로젝트 생성 도구를 쓰는
+**`<경로>/*.swift` 를 쓰지 않는다.** 그 글로브는 최상위 파일만 본다.
+실측한 저장소는 테스트 파일 60개 중 **최상위가 12개**뿐이어서,
+글로브로 세면 **159**, 재귀로 세면 **768** 이었다 — **진값의 21%만 보고한다.**
+
+**①−②−③ 을 ④와 비교한다.** 주석·스킵을 빼지 않으면 숫자가 안 맞고,
+그것을 **"타깃에 안 붙었다 → 프로젝트 재생성"** 으로 오진한다.
+재생성해도 숫자는 안 맞는다 — 실측한 저장소에 주석 처리된 `func test` 가 **25건**,
+`XCTSkip` 이 **4건** 있었다. **이 셋은 테스트를 돌리지 않고 정적으로 알 수 있으니 먼저 뺀다.**
+
+②③을 뺀 뒤에도 ④와 다르면 **그때** 타깃 문제다. 프로젝트 생성 도구를 쓰는
 저장소에서 파일만 추가하면 조용히 실행되지 않는다 — 실패도 성공도 하지 않는다.
 프로젝트를 재생성하고 **다시 센다.**
 
@@ -136,16 +174,87 @@ xcodebuild test ... 2>&1 | grep 'Test run with'
 | 1 | 참조 0건인 타입·프로퍼티를 단정하는 테스트 | 출하되지 않는 쪽을 지키고 있을 가능성 |
 | 2 | 단정이 `!= nil` · `count > 0` 처럼 약한 것 | 값이 틀려도 통과한다 |
 | 3 | 최근에 추가된 테스트 | 배선을 끝내지 못한 채 붙였을 수 있다 |
-| 4 | **한 번도 빨개진 적 없는 영역** | 실패한 적이 없다는 것은 지킨 적이 없다는 뜻일 수 있다 |
+| 4 | **한 번도 빨개진 적 없는 영역** | 실패한 적이 없다는 것은 지킨 적이 없다는 뜻일 수 있다. **CI 이력이 필요하다 → 아래** |
 
 ```sh
-# 참조 0건 후보 — 테스트만 그 이름을 쓰고 있나
-grep -rn '<타입·프로퍼티명>' --include='*.swift' . | grep -v Tests
-
-# 약한 단정
-grep -rnE '#expect\((!=|.*!= nil|.*\.count > 0|.*isEmpty == false)' --include='*.swift' <테스트 경로>
-grep -rnE 'XCTAssertNotNil|XCTAssertTrue\(.*\.count' --include='*.swift' <테스트 경로>
+# 프로덕션 참조 수 — 테스트 루트를 명시적으로 제외한다
+grep -rn '<심볼>' --include='*.swift' "$SRC" | grep -v "^$TR/"
 ```
+
+### 먼저 단정 대상 심볼을 뽑는다 — 파일명에서 유추하지 않는다
+
+**스킬이 "타입명으로 검색한다" 고만 적고 그 이름을 어떻게 얻는지가 없었다.**
+그래서 파일명에서 유추하게 되는데, 그것이 조용히 틀린 답을 만든다.
+
+실측 사례다. `<X>StatusTests.swift` 라는 파일이 있어서 `<X>Status` 로 검색하니
+프로덕션 참조 **0건** → 규칙대로면 "배선 안 됨, 지울 후보" 다.
+실제 단정 대상 타입은 `<X>` 였고 프로덕션 참조는 **34건**이었다.
+
+```sh
+# ① 그 테스트 파일이 무엇을 import 하나
+grep -n '@testable import' "<테스트 파일>"
+
+# ② 단정문 안의 대문자 시작 식별자를 뽑는다
+grep -ohE '(XCTAssert[A-Za-z]*|#expect)\([^)]*' "<테스트 파일>" \
+    | grep -ohE '\b[A-Z][A-Za-z0-9]+\b' | sort -u
+
+# ③ 테스트 파일 안에서만 정의된 것(Stub·Mock·Fake)을 뺀다 ← 이 필터가 없으면 오탐이다
+grep -rhoE '^(final )?(class|struct|enum) [A-Z][A-Za-z0-9]+' --include='*.swift' "$TR" \
+    | awk '{print $NF}' | sort -u
+
+# 약한 단정 — Swift Testing
+grep -rnE '#expect\(.*(!= *nil|\.count *> *0|isEmpty *== *false)|#expect\(![A-Za-z].*isEmpty' \
+    --include='*.swift' "$TR"
+
+# 약한 단정 — XCTest (이쪽이 레거시 저장소의 전부다)
+grep -rnE 'XCTAssertNotNil|XCTAssertNoThrow|XCTAssertNotEqual' --include='*.swift' "$TR"
+grep -rnE 'XCTAssert(True|False)\(.*(isEmpty|\.count *>=? *[01])' --include='*.swift' "$TR"
+grep -rnE 'XCTAssert\([A-Za-z_][A-Za-z0-9_.]*\)' --include='*.swift' "$TR"   # 비교 없는 bare
+```
+
+**원래 패턴은 XCTest 저장소를 거의 못 덮었다.** 실측한 저장소의 단정 1,487건 중
+잡히는 것이 **28건(약 17%)** 이었다. 빠진 형태들이다.
+
+| 형태 | 실측 | 원래 패턴이 잡나 |
+|---|---|---|
+| `XCTAssertFalse(x.isEmpty)` | **29** | ✗ — `.count` 만 봤다 |
+| `XCTAssertNotEqual` | 59 | ✗ |
+| `XCTAssertNoThrow` | 31 | ✗ |
+| bare `XCTAssert(flag)` | 20 | ✗ |
+| `XCTAssertNotNil` | 28 | ✓ (유일) |
+| `XCTAssertTrue(x.count > 0)` | **0** | ✓ (그런데 0건) |
+
+**있는 것은 안 잡고 없는 것을 잡고 있었다.** `#expect((!=` 분기는 유효한 Swift 가
+아니어서 죽은 분기였고, `!컬렉션.isEmpty` 라는 가장 흔한 관용구도 놓쳤다.
+
+**③을 건너뛰면 참조 0건 1위가 테스트 로컬 stub 으로 나온다.** 실측에서 그랬다.
+
+**`grep -v Tests` 를 쓰지 않는다.** 경로에 `Test` 가 들어가는 **프로덕션 파일**이
+실측한 저장소에 **16개** 있었고, 프로덕션 라인 중 `Tests` 를 포함한 것이 8건이었다 —
+실제 배선 증거가 조용히 버려진다.
+
+그리고 **`.` 로 검색하지 않는다.** `grep` 구현에 따라 빌드 산출물까지 긁어서
+**참조 수가 부풀고 "참조 0건" 판정이 영구히 안 나온다.**
+
+### 우선순위 3·4 는 저장소만으로 안 된다
+
+| 항목 | 저장소 안에서 되나 | 어떻게 |
+|---|---|---|
+| 3 최근 추가된 테스트 | **된다** | `git log --since=60.days --diff-filter=A --name-only -- "$TR"` |
+| 4 한 번도 빨개진 적 없는 영역 | **안 된다** | CI 결과 이력이 서버에 있고 저장소에 없다 |
+
+**4는 CI 접근이 없으면 건너뛴다.** 실측한 저장소는 CI 가 모든 PR 에서 테스트를 돌리는데
+**결과 이력은 저장소에 한 줄도 없었다** (`.xcresult` 번들이 있지만 추적되지 않는
+로컬 빌드 산출물이고 red/green 이력이 아니다).
+
+**대체안**: 프로덕션은 자주 바뀌는데 대응 테스트는 추가 이후 한 번도 수정되지 않은 짝을 찾는다.
+
+```sh
+git log --format=%h --since=180.days -- "<프로덕션 파일>" | wc -l
+git log --format=%h -- "<대응 테스트 파일>" | wc -l
+```
+
+앞이 크고 뒤가 1이면 **그 테스트는 프로덕션이 바뀌는 동안 한 번도 반응하지 않았다.**
 
 **목록을 내고 승인받는다.** 프로덕션을 깨는 작업이므로 무엇을 얼마나 깰지 사람이 정한다.
 
