@@ -176,6 +176,66 @@ xcrun devicectl device info files --device <ID> \
     --domain-type appDataContainer --domain-identifier <번들ID> --recurse
 ```
 
+### `.ips` 는 JSON 문서 **두 개**다
+
+첫 줄이 헤더, 그 뒤가 본문이다. 한 덩어리로 파싱하면 실패한다.
+
+```python
+raw = open(path, encoding='utf-8').read().split('\n', 1)
+header = json.loads(raw[0])   # bug_type, os_version, timestamp, incident_id
+body   = json.loads(raw[1])   # 리포트 종류마다 구조가 다르다
+```
+
+**`bug_type` 이 리포트 종류를 가른다.** 신호를 읽기 전에 이걸 먼저 본다 —
+종류가 다르면 볼 필드가 아예 다르다. (확인한 값: `298` = JetsamEvent,
+`309` = Analytics. 전체 대응표는 확인하지 않았으므로 필드를 읽어서 판단한다.)
+
+### 앱이 죽었는데 크래시 로그가 없으면 — JetsamEvent 를 본다
+
+**메모리 부족 종료는 크래시가 아니다.** 크래시 리포트가 안 남고 `JetsamEvent` 로 남는다.
+"갑자기 앱이 사라진다", "백그라운드 갔다 오면 처음부터 시작한다" 가 이 증상이다.
+
+```sh
+# 목록에서 JetsamEvent 를 찾는다
+xcrun devicectl device info files --device <ID> --domain-type systemCrashLogs \
+    | grep JetsamEvent
+
+# 꺼낸다
+xcrun devicectl device copy from --device <ID> --domain-type systemCrashLogs \
+    --source JetsamEvent-<날짜>.ips --destination ./jetsam.ips
+```
+
+본문의 `processes` 배열에 **그 시점 기기 전체의 메모리 사용 현황**이 들어 있다.
+
+```python
+body = json.loads(open('jetsam.ips').read().split('\n', 1)[1])
+procs = body['processes']
+
+# 실제로 종료된 것 — reason 이 있는 항목
+killed = [p for p in procs if p.get('reason')]
+#   예: name=assetsd  reason=per-process-limit  rpages=1408  priority=0
+
+# 메모리 사용 상위 (rpages 는 4KB 페이지 단위다)
+top = sorted(procs, key=lambda x: x.get('rpages') or 0, reverse=True)[:5]
+#   rpages * 4 / 1024 = MB
+```
+
+읽는 법이다.
+
+| 필드 | 뜻 |
+|---|---|
+| `reason` | 종료 사유. `per-process-limit` 은 그 앱이 자기 상한을 넘은 것 |
+| `rpages` | 상주 페이지 수. **× 4KB = 실사용 메모리** |
+| `priority` | 낮을수록 먼저 죽는다. 백그라운드 앱이 낮다 |
+| `lifetimeMax` | 그 프로세스가 살아 있는 동안의 최대 사용량 |
+
+**내 앱이 `killed` 에 없어도 `rpages` 상위에 있으면 위험 신호다.**
+기기 메모리가 빠듯할 때 다음 차례가 된다.
+
+**확인한 것** — 실기기에서 `JetsamEvent` 7건을 찾아 그중 하나(245KB)를 `copy from` 으로
+회수하고, 위 파싱으로 `processes` 437개와 종료된 1건(`reason=per-process-limit`)을
+읽는 것까지 실제로 돌렸다.
+
 ---
 
 ## 2. 스택에서 내 코드를 찾는다

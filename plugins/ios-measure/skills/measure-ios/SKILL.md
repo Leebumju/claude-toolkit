@@ -134,7 +134,7 @@ xcrun simctl uninstall <UDID> <bundle-id>   # 캐시까지 지운 첫 실행 조
 | **메인 스레드** | 한 이벤트당 점유 시간 | **16.7ms** 를 넘으면 프레임을 놓친다 (60Hz 기준) |
 | **렌더** | 셀 구성 횟수, 스냅샷 적용 시간, self-sizing 계산 횟수 | 화면에 안 보이는 셀까지 구성된다 |
 | **객체 생성** | 반복 경로에서 만들어지는 무거운 객체 수 | 포매터·정규식·인코더가 루프 안에서 생성된다 |
-| **메모리** | 캐시 히트/미스, 캐시 크기, 화면 해제 여부 | 뒤로 가도 메모리가 안 준다 |
+| **메모리** | 캐시 히트/미스, 캐시 크기, 화면 해제 여부. **실기기 실사용 값은 JetsamEvent 로** (4단계) | 뒤로 가도 메모리가 안 준다 |
 | **동시성** | 순차 대기 구간 | 독립적인 두 호출이 순차로 붙어 있다 |
 | **정적** | 빌드 시간, 린트 경고 수, 파일·줄 수, 테스트 수 | (문서에 적는 수치. 6단계 참조) |
 | **접근성** | 텍스트 대비비, 탭 영역 크기 | 대비 4.5:1 · 탭 영역 44×44pt 미달 |
@@ -254,9 +254,18 @@ xcrun devicectl device info files --device <Identifier> \
     --domain-type appDataContainer --domain-identifier <번들ID> --recurse
 ```
 
-**확인한 것** — 실기기에서 `list devices` · `info files`(컨테이너 453개 나열) ·
-`copy to`/`copy from` 왕복(내용 그대로 회수)이 동작하는 것을 확인했다.
+**확인한 것** — 실기기에서 다음을 실제로 돌렸다.
+
+| 확인 | 결과 |
+|---|---|
+| `list devices` | 연결 상태 |
+| `info files --domain-type appDataContainer` | 컨테이너 453개 나열 |
+| `info files ... --subdirectory Documents` | **빈 디렉토리는 `0 files:` 를 낸다.** 실패가 아니다 |
+| `copy from` (앱이 쓴 파일) | 31바이트 파일 그대로 회수 |
+| `copy to` → `copy from` (`temporary` 도메인) | 왕복, 내용 그대로 |
+
 **`process launch` 는 실행해 보지 않았다** — 옵션 표면만 확인했다.
+앱이 파일을 쓰는 쪽은 `FileManager` 코드일 뿐이라 `devicectl` 과 무관하다.
 
 세 가지를 미리 알아 둔다.
 
@@ -265,6 +274,35 @@ xcrun devicectl device info files --device <Identifier> \
 | `Failed to load provisioning paramter list ... No provider was found` 가 **매 호출마다** 뜬다 | 무해하다. 실패로 판단하지 않는다 |
 | 기기가 잠겨 있으면 일부 명령이 막힌다 | `device info lockState` 로 먼저 본다 |
 | 화면 배율·크기는 기기마다 다르다 | `device info displays` 가 `bounds` 와 `pointScale` 을 준다. 셀 크기 계산의 전제다 |
+
+### 메모리는 계측 없이도 실측된다 — JetsamEvent
+
+**앱에 코드를 한 줄도 넣지 않고 실기기 메모리 사용량을 알 수 있다.**
+기기가 메모리 압박으로 프로세스를 죽일 때 남기는 `JetsamEvent` 리포트에
+**그 시점 기기 전체의 프로세스별 메모리 현황**이 들어 있다.
+
+```sh
+xcrun devicectl device info files --device <Identifier> \
+    --domain-type systemCrashLogs | grep JetsamEvent
+
+xcrun devicectl device copy from --device <Identifier> --domain-type systemCrashLogs \
+    --source JetsamEvent-<날짜>.ips --destination ./jetsam.ips
+```
+
+`.ips` 는 **JSON 문서 두 개**다 (첫 줄 헤더, 그 뒤 본문). 한 덩어리로 파싱하면 실패한다.
+
+```python
+body = json.loads(open('jetsam.ips').read().split('\n', 1)[1])
+for p in sorted(body['processes'], key=lambda x: x.get('rpages') or 0, reverse=True)[:5]:
+    print(p['name'], (p.get('rpages') or 0) * 4 / 1024, 'MB')   # rpages 는 4KB 페이지
+```
+
+**확인한 것** — 실기기에서 `JetsamEvent` 7건을 찾아 하나(245KB)를 회수하고,
+`processes` 437개의 `rpages` 를 읽는 것까지 실제로 돌렸다.
+
+이 수치가 값어치 있는 이유는 **실기기·실사용 중에 찍힌 값**이라는 것이다.
+계측으로 재는 값은 내 조작 시나리오 안의 값이고, 이것은 사용자가 실제로 쓰던 상태다.
+`lifetimeMax` 로 그 프로세스의 생존 중 최대 사용량도 볼 수 있다.
 
 ### 실기기에서만 잴 수 있는 것
 
