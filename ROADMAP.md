@@ -41,6 +41,26 @@
 - 특정 규모에서만 성립한다 (언어 20개 이상, 모듈 10개 이상)
 - 우리 앱에만 있는 도메인이 절차에 들어간다
 
+### 두 번째 기준 — Xcode 가 기본으로 주는가
+
+WWDC26 에서 Xcode 27 이 **커스텀 스킬**(마크다운)과 **기본 제공 전문 영역**을 넣었다.
+공개된 기본 영역에 **접근성 · universal sizing · 테스팅/퍼포먼스**가 들어 있다.
+
+> **Xcode 가 기본으로 주는 것을 또 만들지 않는다.** 두 벌이 되고, 어긋난다.
+
+**단, 이것은 아직 확인하지 못했다.** 우리 머신은 Xcode 26.4 이고 기본 제공 스킬이
+실제로 무엇을 어디까지 하는지 보지 못했다. 그래서 **"확인 필요"** 로 표시하고,
+Xcode 27 을 실제로 써 본 뒤에 확정한다.
+
+반대로 **Xcode 가 줄 수 없는 것**이 우리가 만들 자리다.
+
+| Xcode 가 줄 수 없는 것 | 왜 |
+|---|---|
+| 저장소별 관례에 의존하는 절차 | `legacy-port` 의 "이 저장소의 신규 패턴을 찾는다" |
+| 우리가 겪은 실패 사례 사전 | `crash-triage` 의 패턴 7종 |
+| 도구 자체를 검사하는 메타 도구 | `skill-audit` — Xcode 기본 스킬도 검사 대상이다 |
+| 채용 과제 전형 | `hiring-assignment` |
+
 ## 상태
 
 | 상태 | 뜻 |
@@ -113,9 +133,14 @@
 | `.left`/`.right` 대신 `leading`/`trailing` | `a11y-audit` 을 만들면 거기로 |
 | `String(format:)` 문장 조립은 어순이 다른 언어에서 깨진다 | 같음 |
 
-**`a11y-audit` 은 JD 근거가 0이다.** 7건 중 한 줄도 없었다.
-근거는 실전뿐이므로 우선순위를 낮게 둔다 — 다만 실전 근거는 강하다
-(대비 2.01:1, VoiceOver 미독, 조사 오류를 실제로 잡았다).
+**`a11y-audit` 은 만들지 않는 쪽으로 기울었다.** 이유가 둘이다.
+
+1. **JD 근거가 0이다.** 7건 중 한 줄도 없었다
+2. **Xcode 27 기본 제공 전문 영역에 접근성이 들어 있다** (확인 필요)
+
+실전 근거는 강하다 — 대비 2.01:1, VoiceOver 미독, 조사 오류를 실제로 잡았다.
+그래서 버리지는 않고 **Xcode 27 기본 스킬이 그 셋을 잡는지 확인한 뒤 판단한다.**
+잡으면 만들지 않고, 못 잡으면 그 구멍만 채우는 좁은 스킬로 만든다.
 
 ## E. 특수 — 해당 여부를 먼저 확인해야 한다
 
@@ -149,6 +174,39 @@
 `test-seams` 를 먼저 한 이유는 `legacy-port`·`modularize-ios`·`measure-ios` 세 곳이
 이미 "테스트 자리가 없으면 여기로" 라고 가리키고 있었기 때문이다.
 가리키는 대상이 없으면 그 줄이 폴백으로만 동작한다. 지금은 셋 다 실재하는 대상을 가리킨다.
+
+## 실기기 경로 — 반영 완료, 남은 것
+
+`devicectl` 은 Xcode 15 부터 있었고 우리 스킬에 **통째로 빠져 있었다.**
+`Device Hub` 는 그 위에 얹은 UI 다. CLI 는 지금도 쓸 수 있다.
+
+`measure-ios` 와 `crash-triage` 에 넣었다. **실기기에서 실제로 확인한 것**:
+
+| 명령 | 결과 |
+|---|---|
+| `list devices` | 연결 상태 확인 |
+| `device info files --domain-type systemCrashLogs` | `.ips` 321개 나열 |
+| `device info files --domain-type appDataContainer` | 컨테이너 453개 나열 |
+| `device copy to` → `copy from` | 왕복, 내용 그대로 회수 |
+| `device info displays` | `bounds` · `pointScale` |
+| `device info lockState` | 잠금 전제 확인 |
+
+**실행해 보지 않은 것**: `process launch` · `sendMemoryWarning` · `suspend`/`resume` ·
+`orientation set` · `sysdiagnose`. 옵션 표면만 확인했고 문서에 그렇게 적었다.
+
+### UI 자동화는 반만 된다
+
+`devicectl` 에 **터치 입력 명령이 없다** (`tap`·`swipe`·`gesture` 0건).
+그래서 실기기 UI 자동화는 **`devicectl`(상태 제어) + XCUITest(입력)** 조합이다.
+시뮬레이터에서 `axe` 로 하던 것을 실기기에서 그대로 할 수 없다.
+
+### 보류 — `device-control` 스킬을 따로 만들까
+
+`devicectl` 이 다루는 범위가 넓어서 별 스킬 값어치가 있어 보인다.
+**지금 만들지 않는다** — `measure-ios`·`crash-triage` 를 실제로 몇 번 돌려 보고
+**반복되는 것이 무엇인지 본 뒤에** 판단한다. 지금 만들면 추측이다.
+
+---
 
 ## 언젠가 쪼갤 것 — 플러그인 단위
 
