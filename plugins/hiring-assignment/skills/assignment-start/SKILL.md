@@ -52,8 +52,27 @@ allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 
 ### 요구사항 체크리스트는 파일로 남긴다 — 재개 지점
 
-`.claude/assignment/checklist.md` 에 적는다. **추적되는 경로에 두지 않는다.** `.gitignore` 에 `.claude/` 가 있는지 먼저 확인한다
-(`git check-ignore -q .claude/x && echo 무시됨`). 없으면 먼저 추가한다 — 없으면 작업 파일이 커밋 후보로 뜬다.
+`.claude/assignment/checklist.md` 에 적는다. **추적되는 경로에 두지 않는다.** **파일을 만든 뒤 그 파일이 실제로 안 뜨는지 확인한다.**
+
+```sh
+git status --porcelain <내가 만든 파일>   # 아무것도 안 나와야 한다
+```
+
+`git check-ignore` 만으로는 부족하다. 이유가 둘이다.
+
+**하나 — 디렉토리로 물으면 답이 거꾸로 나온다.** 실측하면 이렇다.
+
+```
+git check-ignore -v .claude          → rc=1  (무시 안 됨으로 보인다)
+git check-ignore -v .claude/x/y.md   → rc=0  (.gitignore 규칙을 짚는다)
+```
+
+디렉토리 자체는 무시 대상으로 보고되지 않는다. **파일로 물어야 규칙이 나온다.**
+
+**둘 — `.gitignore` 에 있어도 이미 추적 중인 파일은 계속 추적된다.**
+실제 저장소에서 `.claude/` 가 무시 대상인데 그 안에 추적 중인 파일이 10개 있었다.
+
+그래서 **내가 만든 파일을 `git status --porcelain` 으로 직접 묻는다.** 그게 유일한 확답이다 — 없으면 작업 파일이 커밋 후보로 뜬다.
 제출물에 작업 메모가 섞이면 그것도 채점 대상이 된다 — 뼈대의 `docs/PLAN.md` 를 제출 전에
 지우는 것과 같은 이유다.
 
