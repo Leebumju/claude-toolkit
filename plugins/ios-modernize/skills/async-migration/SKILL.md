@@ -55,8 +55,27 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 
 ### 기록은 파일로 남긴다 — 재개 지점
 
-`.claude/async-migration/<대상>.md` 에 적는다. **추적되는 경로에 두지 않는다.** `.gitignore` 에 `.claude/` 가 있는지 먼저 확인한다
-(`git check-ignore -q .claude/x && echo 무시됨`). 없으면 먼저 추가한다 — 없으면 작업 파일이 커밋 후보로 뜬다.
+`.claude/async-migration/<대상>.md` 에 적는다. **추적되는 경로에 두지 않는다.** **파일을 만든 뒤 그 파일이 실제로 안 뜨는지 확인한다.**
+
+```sh
+git status --porcelain <내가 만든 파일>   # 아무것도 안 나와야 한다
+```
+
+`git check-ignore` 만으로는 부족하다. 이유가 둘이다.
+
+**하나 — 디렉토리로 물으면 답이 거꾸로 나온다.** 실측하면 이렇다.
+
+```
+git check-ignore -v .claude          → rc=1  (무시 안 됨으로 보인다)
+git check-ignore -v .claude/x/y.md   → rc=0  (.gitignore 규칙을 짚는다)
+```
+
+디렉토리 자체는 무시 대상으로 보고되지 않는다. **파일로 물어야 규칙이 나온다.**
+
+**둘 — `.gitignore` 에 있어도 이미 추적 중인 파일은 계속 추적된다.**
+실제 저장소에서 `.claude/` 가 무시 대상인데 그 안에 추적 중인 파일이 10개 있었다.
+
+그래서 **내가 만든 파일을 `git status --porcelain` 으로 직접 묻는다.** 그게 유일한 확답이다 — 없으면 작업 파일이 커밋 후보로 뜬다.
 
 전환은 계층별로 나뉘어 진행되고, 중간에 끊기면 **어디까지 네이티브고 어디부터 브릿지인지**
 알 수 없게 된다. 그 상태에서 `async let` 판정을 하면 틀린다 (→ 5단계).
@@ -117,29 +136,122 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 
 추측하지 않는다. **브릿지와 네이티브가 섞여 있는지**가 5단계 판정을 가른다.
 
+**먼저 앱 소스 루트를 정한다.** 저장소 루트에서 돌리면 SPM 체크아웃·생성물이 섞인다 —
+실측한 저장소는 루트 기준 `.swift` 가 27,076개인데 앱 소스는 4,183개였다.
+아래 `<대상>` 은 전부 **앱 소스 루트**다. 다섯 명령의 범위를 같게 둔다.
+
 ```sh
-# 콜백 기반 (completion / success·failure 쌍)
-grep -rnE 'completion: *@escaping|success: *@escaping|failure: *@escaping' --include='*.swift' <대상>
-
-# Rx 기반
-grep -rnE 'Observable<|Single<|\.subscribe\(|DisposeBag' --include='*.swift' <대상> | wc -l
-
-# 브릿지 (continuation 으로 감싼 것)
-grep -rn 'withCheckedThrowingContinuation\|withCheckedContinuation\|withUnsafeContinuation' --include='*.swift' .
-
-# 취소를 인지하는 브릿지인가 ← 이 수가 위 수보다 적으면 그 차이가 위험 구간이다
-grep -rn 'withTaskCancellationHandler' --include='*.swift' . | wc -l
-
-# 병렬 호출 (5단계 판정 대상)
-grep -rn 'async let\|withThrowingTaskGroup\|withTaskGroup' --include='*.swift' .
+# 콜백 기반 — 줄이 아니라 파일별 밀도부터 본다
+grep -rlcE 'completion: *@escaping|success: *@escaping|failure: *@escaping' \
+    --include='*.swift' <대상> | sort -t: -k2 -rn | head -30
 ```
 
-**`continuation` 개수와 `withTaskCancellationHandler` 개수의 차이**가 이 저장소에서
-취소가 새는 지점의 상한이다. 그 목록을 먼저 만든다.
+**줄 목록을 그대로 뽑지 않는다.** 실측한 저장소에서 이 패턴은 **2,437줄 / 505파일**이었다.
+"505파일" 은 작업 단위가 되지만 "2,437줄" 은 절차를 깬다. 밀도 상위부터 계층을 고른다.
+
+`handler:` `onSuccess:` `onError:` `onFailure:` `callback:` 형태는 위 패턴이 놓친다.
+**저장소가 쓰는 이름을 먼저 확인하고 패턴에 넣는다.**
+
+```sh
+# Rx 표면 — 데이터 요청용과 UI 바인딩용을 함께 본다
+grep -rlcE 'Observable<|Single<|Driver<|\.asDriver|\.drive\(|\.onNext\(|PublishSubject<|BehaviorSubject<|BehaviorRelay<|DisposeBag' \
+    --include='*.swift' <대상> | wc -l          # 파일 수
+grep -rhoE 'Observable<|Single<|Driver<|\.drive\(|\.onNext\(|PublishSubject<|BehaviorSubject<' \
+    --include='*.swift' <대상> | sort | uniq -c | sort -rn    # 구조별 분포
+```
+
+**`Observable<|Single<|.subscribe(|DisposeBag` 네 개만 세면 규모를 크게 놓친다.**
+실측한 저장소에서 그 넷은 178줄이었고, `Driver`·`.onNext`·Subject 를 넣으면 **2,575줄**이었다.
+178 은 "쓸어내면 된다" 로 읽히고 2,575 는 "이게 앱 본체다" 로 읽힌다 — 결정이 바뀐다.
+
+```sh
+# 브릿지 — 표준 라이브러리 변종 네 개를 한 번에
+grep -rnE 'with(Checked|Unsafe)(Throwing)?Continuation' --include='*.swift' <대상>
+```
+
+**변종을 나열하지 말고 정규식으로 묶는다.** 실측한 저장소는
+`withUnsafeThrowingContinuation` 을 쓰는데, 변종을 손으로 적으면 그것만 빠뜨린다
+(실제로 그렇게 빠뜨려서 브릿지 본체를 못 찾았다).
+
+```sh
+# 취소 핸들러
+grep -rn 'withTaskCancellationHandler' --include='*.swift' <대상>
+
+# 병렬 호출 (5단계 판정 대상)
+grep -rnE 'async let|withThrowingTaskGroup|withTaskGroup' --include='*.swift' <대상>
+```
+
+### 브릿지가 헬퍼로 중앙화돼 있으면 2패스로 센다
+
+성숙한 저장소는 continuation 을 호출부마다 쓰지 않고 **헬퍼 하나로 감싼다.**
+그러면 continuation 개수는 1~2개인데 실제 브릿지 지점은 수십 개다.
+
+```sh
+# 1패스 — continuation 이 어느 함수 안에 있는지 본다
+grep -rnE -B5 'with(Checked|Unsafe)(Throwing)?Continuation' --include='*.swift' <대상> \
+    | grep -E 'func |static func '
+
+# 2패스 — 그 함수 이름으로 호출 지점을 센다
+grep -rn '<헬퍼 함수명>' --include='*.swift' <대상> | wc -l
+```
+
+실측한 저장소에서 continuation 은 3곳뿐인데, 그중 하나가 공용 헬퍼였고
+**그 헬퍼 호출 지점이 17건 / 6파일**이었다. 지표는 **호출 지점 기준**이어야 한다.
+
+### 취소 지표를 두 축으로 나눈다
+
+**`continuation 수 − 취소 핸들러 수` 는 지표가 되지 않는다.** 층위가 다르다 —
+헬퍼 정의 안의 핸들러 1개가 호출 지점 수십 개를 덮으므로 뺄셈이 성립하지 않는다.
+
+두 가지를 따로 판정한다.
+
+| 축 | 무엇 | 어떻게 판정하나 |
+|---|---|---|
+| **① continuation 재개** | 취소 시 재개되지 않으면 **크래시** | 핸들러 유무로 정적 판정 가능 |
+| **② 하위 요청 중단** | 재개는 되는데 요청은 계속 도는 상태 | **`onCancel` 본문을 읽어야 안다** |
+
+②가 함정이다. 실측한 헬퍼는 `onCancel` 에서 `continuation.resume(throwing:)` 만 하고,
+**콜백 API 에 취소를 전달할 경로가 시그니처에 없었다.** 그래서 재개는 안전하지만
+요청은 계속 살아 있다 — 핸들러가 있다는 사실만으로 통과 판정을 내리면 이것을 놓친다.
+
+`async -> Bool` 처럼 **throw 하지 않는 브릿지**는 애초에 throw 하는 취소 핸들러를
+붙일 수 없다. 그건 "핸들러 누락" 이 아니라 별 범주로 적는다.
 
 ---
 
 ## 2. 옮길 순서를 정한다 — 시그니처는 유지
+
+### 먼저 그 계층이 있는지 확인한다
+
+**"Repository → UseCase → ViewModel" 은 신규 코드의 모양이다.** 레거시에는 그 계층이 없다.
+
+```sh
+for pat in UseCase Repository Service Interactor Manager; do
+    printf '%-12s %s개\n' "$pat" "$(find <대상> -name "*${pat}*.swift" | wc -l)"
+done
+```
+
+실측한 저장소는 이랬다.
+
+```
+UseCase        4개      ← 전부 신규 모듈 트리
+Repository     5개      ← 전부 신규 모듈 트리
+Service      590개      ← 레거시 전반
+Interactor   492개      ← 레거시 전반
+```
+
+**콜백이 가장 많은 층에 Repository·UseCase 가 없다.** "위 계층 시그니처를 유지한다" 는
+전제가 성립할 계층 자체가 없는 것이다.
+
+이럴 때는 순서를 제안하기 전에 **"계층이 없다" 를 먼저 보고한다.** 선택지는 둘이고
+어느 쪽이든 사용자 결정이다.
+
+| 선택지 | 무엇 |
+|---|---|
+| **전환 범위를 신규 트리로 한정** | 레거시 Service·Interactor 는 손대지 않는다 |
+| **경계 타입을 먼저 만든다** | 전환 전에 별건 작업으로 계층을 세운다 (→ `di-introduce`) |
+
+계층이 있는 경우에만 아래로 간다.
 
 아래 계층부터 옮긴다. 그리고 **위 계층의 시그니처를 바꾸지 않는다.**
 
@@ -215,11 +327,22 @@ final class LegacyClient: @unchecked Sendable {
 
 **한 번만 값을 내는 것과 계속 내는 것을 구분한다.** 섞으면 취소 의미가 달라진다.
 
-| Rx | 옮길 대상 |
-|---|---|
-| `Single` / 한 번 값을 내고 끝 | `async throws -> T` |
-| `Observable` / 계속 값을 냄 | `AsyncStream` · `AsyncThrowingStream` |
-| `DisposeBag` 로 수명 관리 | `Task` 를 보관하고 `deinit`·이탈 시점에 `cancel()` |
+| Rx | 무엇인가 | 옮길 대상 |
+|---|---|---|
+| `Single` · `Completable` · `Maybe` | 한 번 값을 내고 끝 | `async throws -> T` |
+| `Observable` | 계속 값을 냄 | `AsyncStream` · `AsyncThrowingStream` |
+| **`Driver` · `.asDriver` · `.drive(`** | replay-1 + 메인스레드 확정 + **에러 없음** 보증 | `@Published` 또는 `AsyncStream`. **세 보증을 어디서 다시 만들지 먼저 정한다** |
+| **`PublishSubject` + `.onNext(`** | 스트림이 아니라 **명령형 입력 포트** | **그냥 async 메서드 호출.** 스트림으로 옮기지 않는다 |
+| **`BehaviorSubject` · `BehaviorRelay`** | 현재값 보유자 | `@Published` 또는 초기값 있는 상태. `AsyncStream` 은 층위가 틀리다 |
+| `DisposeBag` 로 수명 관리 | 구독 해지 | `Task` 를 보관하고 `deinit`·이탈 시점에 `cancel()` |
+
+**1행이 0건일 수 있다.** 실측한 저장소는 `Single`·`Completable`·`Maybe` 실사용이 **0건**이었고,
+최다가 `Driver` 계열 **964줄**이었다. Rx 를 데이터 요청이 아니라 **UI 바인딩으로만** 쓰는
+저장소가 있다. 그때는 "async 로 바꾼다" 가 아니라 "`@Published` 로 바꾼다" 가 답이다.
+
+`Driver` 를 `AsyncStream` 으로 옮길 때 특히 조심한다. **replay-1 이 사라져서
+늦게 붙은 소비자가 아무 값도 못 받고**, "에러 없음" 타입 보증도 사라진다.
+그 둘을 어디서 다시 만들지 정하지 않고 옮기면 동작이 바뀐다.
 
 `deinit` 에서 취소할 때 주의한다. **`deinit` 에서 액터 격리 상태를 건드리면 안 된다.**
 취소는 격리 없이 부를 수 있는 형태로 만들어 둔다.
@@ -258,13 +381,43 @@ final class LegacyClient: @unchecked Sendable {
 취소**한다. 취소를 인지하지 못하는 브릿지가 그 안에 있으면 continuation 이 재개되지 않고,
 작업이 해제되면서 크래시한다.
 
-판정표다.
+### 판정하려면 호출 그래프를 따라가야 한다
+
+**`async let` 우변이 브릿지를 타는지는 그 줄만 봐서 알 수 없다.**
+프로토콜을 경유하면 심볼 검색 한 번으로는 절대 안 닿는다.
+
+실측한 사례는 세 홉이었다.
+
+```
+async let 우변 호출  →  프로토콜 선언  →  주입된 구체 타입  →  브릿지 헬퍼
+```
+
+절차는 이렇다.
+
+```sh
+# ① 우변 호출의 심볼명을 뽑는다
+grep -rn 'async let' --include='*.swift' <대상>
+
+# ② 그 심볼이 프로토콜 선언이면, 채택 타입을 찾는다
+grep -rnE ': *<프로토콜명>|, *<프로토콜명>' --include='*.swift' <대상>
+
+# ③ 주입 기본 인자와 실제 주입 지점을 **양쪽** 본다
+grep -rnE 'init\(.*: *<프로토콜명> *= *[A-Z]' --include='*.swift' <대상>
+
+# ④ 그 구현 안에서 브릿지 헬퍼 이름을 찾는다 (1단계 2패스에서 얻은 이름)
+grep -n '<헬퍼 함수명>' <구체 타입 파일>
+```
+
+**②를 건너뛰면 판정이 틀린다.** 프로토콜만 보고 "브릿지 없음" 으로 읽기 쉽다.
+
+판정표다. **"취소 핸들러가 붙어 있다" 는 것만으로 통과시키지 않는다** —
+`onCancel` 이 레거시 취소 API 를 실제로 호출하는지 본문을 읽는다 (1단계 ② 축).
 
 | 상황 | 병렬 방법 |
 |---|---|
 | 전부 네이티브 async (브릿지 0) | `async let` 가능 |
-| 브릿지가 섞여 있고 **취소 핸들러가 붙어 있다** | `TaskGroup` 을 쓴다. 실패 처리를 명시적으로 쓸 수 있다 |
-| 브릿지가 섞여 있고 취소 핸들러가 없다 | **병렬로 만들지 않는다.** 순차로 둔다 |
+| 브릿지가 섞여 있고 **`onCancel` 이 레거시 취소 API 를 실제로 호출한다** | `TaskGroup` 을 쓴다. 실패 처리를 명시적으로 쓸 수 있다 |
+| 취소 핸들러가 없거나, 있어도 **요청을 중단시키지 못한다** | **병렬로 만들지 않는다.** 순차로 둔다 |
 
 ```swift
 // 브릿지가 섞여 있을 때의 병렬 — 실패를 개별로 다룰 수 있다
