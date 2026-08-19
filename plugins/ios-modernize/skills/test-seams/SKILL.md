@@ -55,8 +55,27 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 
 ### 기록은 파일로 남긴다 — 재개 지점
 
-`.claude/test-seams/<대상>.md` 에 적는다. **추적되는 경로에 두지 않는다.** `.gitignore` 에 `.claude/` 가 있는지 먼저 확인한다
-(`git check-ignore -q .claude/x && echo 무시됨`). 없으면 먼저 추가한다 — 없으면 작업 파일이 커밋 후보로 뜬다.
+`.claude/test-seams/<대상>.md` 에 적는다. **추적되는 경로에 두지 않는다.** **파일을 만든 뒤 그 파일이 실제로 안 뜨는지 확인한다.**
+
+```sh
+git status --porcelain <내가 만든 파일>   # 아무것도 안 나와야 한다
+```
+
+`git check-ignore` 만으로는 부족하다. 이유가 둘이다.
+
+**하나 — 디렉토리로 물으면 답이 거꾸로 나온다.** 실측하면 이렇다.
+
+```
+git check-ignore -v .claude          → rc=1  (무시 안 됨으로 보인다)
+git check-ignore -v .claude/x/y.md   → rc=0  (.gitignore 규칙을 짚는다)
+```
+
+디렉토리 자체는 무시 대상으로 보고되지 않는다. **파일로 물어야 규칙이 나온다.**
+
+**둘 — `.gitignore` 에 있어도 이미 추적 중인 파일은 계속 추적된다.**
+실제 저장소에서 `.claude/` 가 무시 대상인데 그 안에 추적 중인 파일이 10개 있었다.
+
+그래서 **내가 만든 파일을 `git status --porcelain` 으로 직접 묻는다.** 그게 유일한 확답이다 — 없으면 작업 파일이 커밋 후보로 뜬다.
 
 닿지 않는 곳의 지도와 승인받은 우선순위가 이 절차의 자산이다.
 대화가 끊긴 뒤 기억으로 이어가면 **승인받지 않은 구조 변경**이 섞인다.
@@ -119,9 +138,24 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 | 테스트가 하나도 없다 | 신규 프로젝트면 Swift Testing, 오래된 저장소면 XCTest |
 
 ```sh
-grep -rl '^import XCTest' --include='*.swift' . | wc -l
-grep -rl '^import Testing' --include='*.swift' . | wc -l
+EX="--exclude-dir=build --exclude-dir=.build --exclude-dir=Derived --exclude-dir=checkouts --exclude-dir=vendor"
+grep -rl '^import XCTest'  --include='*.swift' $EX "<앱 소스 루트>" | wc -l
+grep -rl '^import Testing' --include='*.swift' $EX "<앱 소스 루트>" | wc -l
 ```
+
+**제외 인자 없이 저장소 루트에서 돌리면 답의 대부분이 남의 코드다.**
+실측하면 `XCTest` 2,758건이 나오는데 내역이 **빌드 산출물 1,959 / 워크트리 742 /
+실제 테스트 타깃 51** 이었고, `Testing` 40건은 **전부 서드파티 체크아웃의 자체 테스트**였다.
+그 숫자를 표에 물리면 **없는 Swift Testing 을 고른다.** 제외 인자를 붙이면 **53 / 0** 이 되어
+표가 바로 답을 준다.
+
+**히트 경로를 먼저 눈으로 본다.** `| wc -l` 앞에 `| head` 를 붙여 어디서 나오는지 확인한다.
+
+| 상황 | 선택 |
+|---|---|
+| 한쪽이 0 | 0이 아닌 쪽 |
+| **둘 다 0이 아니다** | **압도적인 쪽을 따른다.** 새 파일만 소수 쪽으로 쓰지 않는다 — 한 타깃에 섞는 것이 되는지 확인되지 않았다 |
+| 둘 다 0 | 아래 판정표 |
 
 **한 타깃에 둘을 섞을 수 있는지는 확인하지 못했다.** 내가 본 저장소들은 전부 한쪽만 쓴다
 (레거시 51파일 XCTest / 신규 저장소 Swift Testing). 섞어야 한다면 **파일 하나로 먼저
@@ -142,22 +176,82 @@ grep -rl '^import Testing' --include='*.swift' . | wc -l
 | **시간·랜덤·기기 상태에 의존** | `Date()` `random` `UIDevice` `UserDefaults` 직접 호출 |
 | **결과가 화면에만 남는다** | 반환값 없이 뷰 프로퍼티만 바꾸는 함수 |
 
+**`<대상>` 은 모듈 디렉토리 하나다. 저장소 루트를 넣지 않는다.**
+루트를 넣고 돌리면 빌드 산출물·의존성 체크아웃이 섞여 수천 줄이 쏟아진다 —
+실측한 저장소는 루트 기준 한 명령이 7,874줄을 냈고 대부분이 산출물이었다.
+**공백이 있는 경로는 반드시 인용부호로 감싼다.**
+
 ```sh
-# 전역 상태를 잡는 곳
-grep -rn '\.shared\b' --include='*.swift' <대상> | wc -l
+D="<모듈 디렉토리>"
+EX="--exclude-dir=build --exclude-dir=.build --exclude-dir=Derived --exclude-dir=checkouts --exclude-dir=.claude"
 
-# 타입 안에서 의존성을 만드는 곳 (생성자 주입이 아닌 것)
-grep -rnE '= [A-Z][A-Za-z]*(Client|Service|Manager|Store|Repository)\(' --include='*.swift' <대상>
-
-# 화면 파일에 들어 있는 조건문 — 규칙이 여기 있으면 테스트가 못 닿는다
-grep -cE '\bif |\bguard |switch ' <뷰 파일>
-
-# 통제되지 않는 입력
-grep -rnE 'Date\(\)|\.random|UserDefaults\.standard' --include='*.swift' <대상>
+# 전역 상태 — 개수가 아니라 어느 싱글턴인지를 본다
+grep -rhoE '\b[A-Z][A-Za-z0-9]*\.(shared|sharedInstance)\b' --include='*.swift' $EX "$D" \
+    | sort | uniq -c | sort -rn
 ```
 
-**가장 중요한 항목은 마지막 두 개다.** 규칙이 화면 안에 있으면 규칙 테스트가 통과해도
-화면이 틀릴 수 있다. 그게 이 스킬이 존재하는 이유다.
+**`wc -l` 로 총계만 내지 않는다.** 실측한 저장소는 총 1,849건이었는데
+리시버별로 집계하니 **최상위 하나가 68%(1,254건)** 였다. 판단 근거는 그 분포다.
+
+```sh
+# 타입 안에서 의존성을 만드는 곳 — suffix 를 먼저 세서 정규식에 넣는다
+grep -rhoE '\b[A-Z][A-Za-z0-9]*(Service|Manager|UseCase|Repository|Wireframe|Presenter|Interactor|Provider|Store|Client)\b' \
+    --include='*.swift' $EX "$D" | sed 's/.*[a-z]//' | sort | uniq -c | sort -rn
+```
+
+**suffix 목록을 고정하지 않는다.** 실측한 저장소에 `Client` 로 끝나는 타입은 **0개**였다 —
+죽은 항목이다. 실제 조립 지점은 `Service` 313 · `Wireframe` 257 · `Presenter` 252 ·
+`Interactor` 249 종이었고, 원래 정규식은 **그 셋을 다 놓쳐서 레거시 조립 지점 903건이
+통째로 사각지대**였다. **0인 suffix 는 빼고, 상위에 있는 것을 넣는다.**
+
+그리고 **두 결함을 한 바구니에 담지 않는다.**
+
+```sh
+grep -rnE '= [A-Z][A-Za-z0-9]*(<위에서 확인한 suffix>)\(' --include='*.swift' $EX "$D" | grep -v 'init('
+#   → 본문 생성. 이 단계의 대상이다
+
+grep -rnE 'init\(.*: *[A-Z][A-Za-z0-9]* *= *[A-Z]' --include='*.swift' $EX "$D"
+#   → 기본값 주입. 3-c 가 금지한 별 결함이므로 목록을 따로 만든다
+```
+
+```sh
+# 규칙이 화면 안에 있는 곳 — 먼저 대상을 고른다
+find "$D" \( -name '*View.swift' -o -name '*ViewController.swift' \) | while IFS= read -r f; do
+    printf '%s %s\n' "$(grep -cE '\bif |\bguard |switch ' "$f")" "$f"
+done | sort -rn | head
+
+# 상위 파일의 줄을 **읽는다**
+grep -nE '\bif |\bguard |switch ' "<상위 파일>"
+```
+
+**개수는 판정이 아니다.** 실측하면 521줄 뷰의 5건이 **전부 SwiftUI 언랩**이었고,
+35건 중 진짜 규칙은 3~4줄이었다. 주석 처리된 코드와 시트 토글이 같은 무게로 잡히고,
+파일이 길수록 숫자가 커져서 교란된다. **레이아웃 분기와 데이터 판정을 손으로 가른다.**
+
+```sh
+# 통제되지 않는 입력 — 경계를 붙인다
+grep -rnE '(^|[^A-Za-z0-9_])(Date\(\)|UUID\(\))|\.random|UserDefaults\.standard|UIDevice\.current' \
+    --include='*.swift' $EX "$D"
+```
+
+**경계가 없으면 메서드 이름을 잡는다.** `Date\(\)` 만 쓰면 `tapCoverageStartDate()` 같은
+이름이 걸린다 — 실측 251건 중 22건(9%)이 그런 오탐이었다.
+그리고 **`: Date = Date()` 처럼 파라미터 기본값 형태는 3-d 가 이미 끝난 자리**이므로 제외한다.
+`UIDevice` 는 표에는 있고 명령에는 없었다 (실측 77건).
+
+### 직접 호출이 적으면 래퍼를 의심한다
+
+**전역 접근이 0에 가깝게 나오는 것은 "깨끗하다" 가 아니라 "다른 이름으로 있다" 다.**
+
+실측한 저장소는 `UserDefaults.standard` 직접 호출이 **71건**뿐이었다.
+그런데 전역 래퍼 싱글턴 하나를 통해 쓰고 있었고 그 참조가 **1,254건**이었다.
+직접 호출만 찾는 명령은 래퍼가 있는 저장소에서 구조적으로 0에 가깝게 나온다.
+
+**첫 명령(리시버별 집계)의 최상위 항목이 저장·시간·기기 상태를 감싸고 있는지 본다.**
+감싸고 있으면 그것이 실제 대상이다.
+
+**가장 중요한 항목은 규칙 위치와 통제되지 않는 입력이다.** 규칙이 화면 안에 있으면
+규칙 테스트가 통과해도 화면이 틀릴 수 있다. 그게 이 스킬이 존재하는 이유다.
 
 ---
 
@@ -284,12 +378,34 @@ func greeting(at date: Date) -> String   // Date() 를 안에서 부르지 않�
 그리고 **선언 수와 실행 수를 대조한다.** 두 값은 다를 수 있다.
 
 ```sh
-grep -rc '@Test\|func test' <테스트 경로>/*.swift | awk -F: '{s+=$2} END {print s}'   # 선언
-xcodebuild test ... 2>&1 | grep 'Test run with'                                      # 실행
+grep -rhoE '@Test\b|func test[A-Za-z0-9_]*' --include='*.swift' "<테스트 루트>" | wc -l   # 선언
+xcodebuild test ... 2>&1 | grep 'Test run with'                                          # 실행
 ```
 
+**`<경로>/*.swift` 를 쓰지 않는다.** 글로브가 파일로 펼쳐져서 `-r` 이 죽는다 —
+실측한 저장소는 테스트 파일 60개 중 최상위가 12개뿐이어서 글로브로 세면 **159**,
+재귀로 세면 **768** 이었다. **79% 과소 집계**다. 대조의 한쪽이 그만큼 틀리면
+**없는 경보를 울리거나 진짜 경보를 삼킨다.**
+
 프로젝트 생성 도구를 쓰는 저장소에서 파일만 추가하면 타깃에 안 붙어
-**실패도 성공도 하지 않는다.** 재생성하고 다시 센다.
+**실패도 성공도 하지 않는다.**
+
+### 재생성해도 안 붙는 경우가 있다 — 제외 목록을 읽는다
+
+**소스 목록이 글로브여도 그 옆에 명시적 제외 목록이 있을 수 있다.**
+그러면 재생성해도 계속 안 붙는다 — 스킬이 "재생성하고 다시 센다" 로 끝나면 이것을 놓친다.
+
+```sh
+grep -rnE 'exclud|EXCLUDED_SOURCE|excluding' <프로젝트 생성 설정 파일>
+```
+
+실측한 저장소는 테스트 파일 **2개가 제외 목록에** 있었고, 그 안의 test 함수 **18개는
+디스크에 선언돼 있고 절대 실행되지 않았다.** 제외된 이유가 설정 파일 주석에 적혀 있었다 —
+mock 이 프로토콜 요구사항을 못 채워 컴파일이 안 되는 상태였고, **타깃에서 빠져 있어서
+아무도 몰랐다.**
+
+이것이 이 스킬 서두의 실패 사례 세 번째와 같은 유형이다.
+**원인이 "재생성 안 함" 이 아니라 "제외돼 있음" 일 수 있다.**
 
 ---
 
