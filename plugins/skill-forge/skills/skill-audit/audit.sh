@@ -124,7 +124,47 @@ done
 # 스킬은 이름으로 불리는 게 아니라 description 이 대화와 맞아서 뜬다.
 # 같은 문구가 두 스킬에 있으면 둘 다 안 뜨거나 엉뚱한 쪽이 뜬다.
 # 스킬 하나만 지정했을 때는 비교 대상이 없으므로 건너뛴다.
+# ── 스킬 참조 표기 드리프트 ─────────────────────────────────────
+#
+# 스킬끼리 서로를 가리키는 표는 파일마다 복제된다. 복제본은 반드시 어긋난다.
+# 실측: 같은 대상을 한쪽은 `measure-ios`, 다른 쪽은 `ios-measure:measure-ios` 로
+# 적어 놓은 상태였고, 규칙을 적어 놓은 문단 바로 위 줄이 그 규칙을 위반하고 있었다.
+# 사람 눈으로는 안 잡힌다. 기계가 잡는다.
 if [ "${#FILES[@]}" -gt 1 ]; then
+    say "스킬 참조 표기 — 다른 플러그인은 플러그인:스킬 형식인가"
+    printf '%s\n' "${FILES[@]}" | python3 -c '
+import re, sys, os
+
+paths = [l.strip() for l in sys.stdin if l.strip()]
+
+# 스킬 이름 → 소속 플러그인
+owner = {}
+for p in paths:
+    skill = os.path.basename(os.path.dirname(p))
+    parts = p.split(os.sep)
+    plugin = parts[parts.index("plugins") + 1] if "plugins" in parts else "?"
+    owner[skill] = plugin
+
+bad = []
+for p in paths:
+    me_skill = os.path.basename(os.path.dirname(p))
+    me_plugin = owner[me_skill]
+    with open(p, encoding="utf-8") as f:
+        for i, line in enumerate(f, 1):
+            for ref in re.findall(r"`([a-z][a-z0-9-]+)`", line):
+                if ref == me_skill or ref not in owner:
+                    continue
+                if owner[ref] != me_plugin:
+                    bad.append((p, i, ref, owner[ref], line.strip()[:64]))
+
+if not bad:
+    print("  \033[32m✓\033[0m 다른 플러그인 참조가 모두 플러그인:스킬 형식")
+else:
+    print("  \033[31m✗\033[0m 접두사 없는 외부 스킬 참조 %d건 — 호출이 안 잡힌다" % len(bad))
+    for p, i, ref, plug, ctx in bad[:10]:
+        print("      %s:%d  `%s` → `%s:%s`" % (os.path.basename(os.path.dirname(p)), i, ref, plug, ref))
+'
+
     say "트리거 겹침 — 같은 문구를 두 스킬이 쓰고 있는가"
     # 쉘로 하면 안 된다. 트리거 문구에 공백이 들어 있어서 awk/uniq 로 자르면
     # `"이 스킬 뭐가 부족해?"` 가 `"이` 로 잘려 엉뚱한 것끼리 비교된다.
@@ -151,7 +191,13 @@ else:
 fi
 
 say "이 스크립트가 판단하지 않은 것"
-echo "  · 문장이 실제로 행동을 바꾸는지 — 사람이 한 절씩 읽어야 한다"
+echo "  · 문장이 실제로 행동을 바꾸는지 (3단계)"
+echo "    → 쓴 사람은 할 수 없다. 방금 쓴 사람에게는 모든 문장이 자명하다."
+echo "    → 별도 세션 · 읽기 전용 · 렌즈 하나로 넘길 것 (SKILL.md 3단계)"
+echo "  · 지식 설명 · 가상 예시 · 절차 겹침 (4단계) — 같은 방식으로 넘길 것"
 echo "  · 뜻은 같고 표현만 다른 트리거 — 문자열 비교로는 안 잡힌다"
 echo "  · 절차가 실제로 통하는지 — 한 번 돌려봐야 안다"
+echo
+printf '  %s이 스크립트만 돌린 것을 "검사받았다" 고 적지 않는다.%s\n' "$YEL" "$OFF"
+echo "  \"기계 검사만 통과\" 가 정확한 표현이다."
 exit 0
