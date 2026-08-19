@@ -1,7 +1,7 @@
 ---
 name: crash-triage
 description: iOS 크래시의 원인을 좁힌다. "크래시 나는데 원인 못 찾겠어", "앱이 죽어", "이 크래시 로그 봐줘", "왜 터지는지 모르겠어", "간헐적으로 죽어" 에 쓴다. 추측으로 고치지 않고 신호와 스택으로 원인군을 먼저 가른 뒤, 고친 것을 테스트로 박제한다.
-argument-hint: "[크래시 로그 경로 또는 증상. 예: '전송 후 뒤로 가면 죽음']"
+argument-hint: "[크래시 로그 경로 또는 증상. 예: '화면 재진입 시 죽음']"
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 ---
 
@@ -22,7 +22,7 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 ## 어떻게 쓰나 — 실제 흐름
 
 ```
-사용자: "전송하고 뒤로 가면 죽어"
+사용자: "화면을 나갔다 다시 들어오면 죽어"
    │
    ├─ 0단계  내가 4개를 묻는다 ──────────────▶ 사용자가 답한다
    │          (재현되나 · 로그 있나 · 빌드 구성 · 언제부터)
@@ -54,7 +54,8 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 
 ### 기록은 파일로 남긴다 — 재개 지점
 
-`.claude/crash/<증상>.md` 에 적는다. **추적되는 경로에 두지 않는다.**
+`.claude/crash/<증상>.md` 에 적는다. **추적되는 경로에 두지 않는다.** `.gitignore` 에 `.claude/` 가 있는지 먼저 확인한다
+(`git check-ignore -q .claude/x && echo 무시됨`). 없으면 먼저 추가한다 — 없으면 작업 파일이 커밋 후보로 뜬다.
 
 크래시 추적은 가설을 세우고 버리는 과정이고, 버린 가설을 잊으면 **같은 가설을 다시 세운다.**
 간헐적 크래시는 며칠에 걸치기도 한다.
@@ -149,7 +150,7 @@ xcrun simctl diagnose
 atos -o <앱>.app.dSYM/Contents/Resources/DWARF/<앱> -arch arm64 -l <로드주소> <주소>
 
 # 로그 전체를 심볼화
-/Applications/Xcode.app/Contents/SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/symbolicatecrash \
+"$(xcode-select -p)"/../SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/symbolicatecrash \
     <로그>.ips <앱>.app.dSYM
 ```
 
@@ -213,8 +214,8 @@ xcodebuild test ... -enableUndefinedBehaviorSanitizer YES
 | 데이터를 비정상으로 만든다 | 중복 키·빈 배열 (패턴 A·B) |
 | 화면을 여러 번 들락날락 | 해제 시점 (패턴 D·G) |
 
-**응답이 빠르면 취소 창이 안 열린다.** 실제로 응답이 650ms 라 제스처 창보다 좁아
-이탈 취소를 재현하지 못한 적이 있다. 그때는 못 했다고 적는다.
+**응답이 빠르면 취소 창이 안 열린다.** 취소 계열(패턴 C)의 재현 조건과 실패 사례는
+`async-migration` 4단계에 있다. 여기서는 재현하지 못했으면 못 했다고 적는 것까지만 한다.
 
 ---
 

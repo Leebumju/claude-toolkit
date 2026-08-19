@@ -52,7 +52,8 @@ allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 
 ### 요구사항 체크리스트는 파일로 남긴다 — 재개 지점
 
-`.claude/assignment/checklist.md` 에 적는다. **추적되는 경로에 두지 않는다.**
+`.claude/assignment/checklist.md` 에 적는다. **추적되는 경로에 두지 않는다.** `.gitignore` 에 `.claude/` 가 있는지 먼저 확인한다
+(`git check-ignore -q .claude/x && echo 무시됨`). 없으면 먼저 추가한다 — 없으면 작업 파일이 커밋 후보로 뜬다.
 제출물에 작업 메모가 섞이면 그것도 채점 대상이 된다 — 뼈대의 `docs/PLAN.md` 를 제출 전에
 지우는 것과 같은 이유다.
 

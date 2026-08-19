@@ -55,7 +55,8 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 
 ### 기록은 파일로 남긴다 — 재개 지점
 
-`.claude/async-migration/<대상>.md` 에 적는다. **추적되는 경로에 두지 않는다.**
+`.claude/async-migration/<대상>.md` 에 적는다. **추적되는 경로에 두지 않는다.** `.gitignore` 에 `.claude/` 가 있는지 먼저 확인한다
+(`git check-ignore -q .claude/x && echo 무시됨`). 없으면 먼저 추가한다 — 없으면 작업 파일이 커밋 후보로 뜬다.
 
 전환은 계층별로 나뉘어 진행되고, 중간에 끊기면 **어디까지 네이티브고 어디부터 브릿지인지**
 알 수 없게 된다. 그 상태에서 `async let` 판정을 하면 틀린다 (→ 5단계).

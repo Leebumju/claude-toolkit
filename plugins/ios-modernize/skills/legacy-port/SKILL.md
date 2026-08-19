@@ -43,7 +43,8 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 ### 기준선 파일은 어디 두나
 
 `.claude/baseline/<대상>.md`. **추적되는 경로에 두지 않는다** — 작업 산출물이 커밋 후보로
-섞이면 안 된다. 저장소에 남겨야 할 이유가 생기면 그때 커밋 후보가 몇 개 늘어나는지 함께 말한다.
+섞이면 안 된다. `.gitignore` 에 `.claude/` 가 있는지 먼저 확인한다
+(`git check-ignore -q .claude/x && echo 무시됨`). 없으면 먼저 추가한다. 저장소에 남겨야 할 이유가 생기면 그때 커밋 후보가 몇 개 늘어나는지 함께 말한다.
 
 ### 작업이 길어져 대화가 끊기면
 
@@ -70,7 +71,7 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 | 이런 게 나오면 | 지킬 원칙 | 절차가 있는 스킬 |
 |---|---|---|
 | 테스트가 닿을 자리가 없다 | 자리를 먼저 만들고 테스트를 붙인다. 안 닿는 곳에 테스트를 붙여 초록으로 만들지 않는다 | `test-seams` (같은 플러그인) |
-| 느려졌다 / 원래 느렸다 | **추측으로 고치지 않는다.** 재고 나서 고친다 | `measure-ios` (`ios-measure` 플러그인) |
+| 느려졌다 / 원래 느렸다 | **추측으로 고치지 않는다.** 재고 나서 고친다 | `ios-measure:measure-ios` |
 | 경계를 세워야 옮길 수 있다 | 공유물을 아래 계층으로 내린다. 위반이 컴파일되지 않는지 확인한다 | `modularize-ios` (같은 플러그인) |
 | 콜백·Rx → async 가 본론이다 | 취소 전파와 continuation 재개를 먼저 확인한다 | `async-migration` (같은 플러그인) |
 
