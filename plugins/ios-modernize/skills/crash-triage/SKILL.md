@@ -147,113 +147,31 @@ EXC_BREAKPOINT (SIGTRAP) — Swift 런타임 트랩 계열
 **신호를 잘못 읽으면 절차 전체가 틀린다.** 로그가 없으면 신호도 모르는 것이고,
 그때는 "신호 미확인" 으로 적고 2단계 대신 재현부터 시도한다.
 
-### 크래시 로그를 어디서 가져오나
+### 로그를 어디서 가져오나
+
+**명령은 `ios-measure` 플러그인의 `measure-ios/device-commands.md` 에 있다.**
+같은 조회표를 두 스킬이 쓰므로 한 곳에 뒀다 — 복제하면 어긋난다.
+
+| 무엇 | 참조 절 |
+|---|---|
+| 맥·시뮬레이터 로그 위치 | §3 |
+| **실기기 크래시 로그 회수** (`systemCrashLogs`) | §3 |
+| `.ips` 파싱 — **JSON 문서가 두 개다** | §4 |
+| **메모리 강제 종료** (`JetsamEvent`) | §5 |
+| 앱이 스스로 남긴 로그 (`appDataContainer`) | §2 |
 
 **실기기가 기준이다.** 시뮬레이터에서 안 죽는 크래시가 실기기에서 죽는다 —
 써멀·메모리 압박·실제 네트워크 지연이 시뮬레이터에 없다.
 
-```sh
-# 맥에서 난 것 (시뮬레이터 포함). 요즘 형식은 .ips (JSON 헤더 + 본문)
-ls -t ~/Library/Logs/DiagnosticReports/*.ips | head -5
+여기서 반드시 하고 넘어갈 것 둘이다.
 
-# 시뮬레이터 진단 수집
-xcrun simctl diagnose
-```
+1. **`bug_type` 을 신호보다 먼저 읽는다.** 리포트 종류가 다르면 볼 필드가 아예 다르다
+2. **앱이 죽었는데 크래시 로그가 없으면 `JetsamEvent` 를 본다.**
+   메모리 부족 종료는 크래시가 아니라 강제 종료라서 크래시 리포트가 남지 않는다.
+   "갑자기 앱이 사라진다" 가 이 증상이다
 
-**실기기는 `devicectl` 로 가져온다.** Xcode 15 부터 있고, `Device Hub` 는 그 위에 얹은 UI 다.
-
-```sh
-# 1) 기기 목록에서 Identifier 를 얻는다. State 가 connected 인 것만 쓸 수 있다
-xcrun devicectl list devices
-
-# 2) 크래시 로그 목록
-xcrun devicectl device info files --device <Identifier> --domain-type systemCrashLogs
-
-# 3) 특정 로그를 꺼낸다
-xcrun devicectl device copy from --device <Identifier> --domain-type systemCrashLogs \
-    --source <파일명>.ips --destination ./crash.ips
-
-# 4) 원인이 안 좁혀지면 전체 진단 아카이브 (느리고 크다)
-xcrun devicectl device sysdiagnose --device <Identifier>
-```
-
-**확인한 것** — 실기기에서 2번이 `.ips` 321개를 나열했고, 3번 왕복(`copy to` → `copy from`)으로
-내용이 그대로 회수되는 것을 확인했다. **4번은 실행해 보지 않았다** (시간이 오래 걸린다).
-
-세 가지를 미리 알아 둔다.
-
-| 알아 둘 것 | 왜 |
-|---|---|
-| `Failed to load provisioning paramter list ... No provider was found` 경고가 **매 호출마다** 뜬다 | 무해하다. 명령은 정상 동작한다. 이 줄을 보고 실패로 판단하지 않는다 |
-| 기기가 잠겨 있으면 일부 명령이 막힌다 | `xcrun devicectl device info lockState --device <ID>` 로 먼저 본다 |
-| 도메인은 네 개다 | `systemCrashLogs` · `appDataContainer` · `appGroupDataContainer` · `temporary` |
-
-**앱이 스스로 남긴 로그는 `appDataContainer` 에서 꺼낸다.**
-
-```sh
-xcrun devicectl device info files --device <ID> \
-    --domain-type appDataContainer --domain-identifier <번들ID> --recurse
-```
-
-### `.ips` 는 JSON 문서 **두 개**다
-
-첫 줄이 헤더, 그 뒤가 본문이다. 한 덩어리로 파싱하면 실패한다.
-
-```python
-raw = open(path, encoding='utf-8').read().split('\n', 1)
-header = json.loads(raw[0])   # bug_type, os_version, timestamp, incident_id
-body   = json.loads(raw[1])   # 리포트 종류마다 구조가 다르다
-```
-
-**`bug_type` 이 리포트 종류를 가른다.** 신호를 읽기 전에 이걸 먼저 본다 —
-종류가 다르면 볼 필드가 아예 다르다. (확인한 값: `298` = JetsamEvent,
-`309` = Analytics. 전체 대응표는 확인하지 않았으므로 필드를 읽어서 판단한다.)
-
-### 앱이 죽었는데 크래시 로그가 없으면 — JetsamEvent 를 본다
-
-**메모리 부족 종료는 크래시가 아니다.** 크래시 리포트가 안 남고 `JetsamEvent` 로 남는다.
-"갑자기 앱이 사라진다", "백그라운드 갔다 오면 처음부터 시작한다" 가 이 증상이다.
-
-```sh
-# 목록에서 JetsamEvent 를 찾는다
-xcrun devicectl device info files --device <ID> --domain-type systemCrashLogs \
-    | grep JetsamEvent
-
-# 꺼낸다
-xcrun devicectl device copy from --device <ID> --domain-type systemCrashLogs \
-    --source JetsamEvent-<날짜>.ips --destination ./jetsam.ips
-```
-
-본문의 `processes` 배열에 **그 시점 기기 전체의 메모리 사용 현황**이 들어 있다.
-
-```python
-body = json.loads(open('jetsam.ips').read().split('\n', 1)[1])
-procs = body['processes']
-
-# 실제로 종료된 것 — reason 이 있는 항목
-killed = [p for p in procs if p.get('reason')]
-#   예: name=assetsd  reason=per-process-limit  rpages=1408  priority=0
-
-# 메모리 사용 상위 (rpages 는 4KB 페이지 단위다)
-top = sorted(procs, key=lambda x: x.get('rpages') or 0, reverse=True)[:5]
-#   rpages * 4 / 1024 = MB
-```
-
-읽는 법이다.
-
-| 필드 | 뜻 |
-|---|---|
-| `reason` | 종료 사유. `per-process-limit` 은 그 앱이 자기 상한을 넘은 것 |
-| `rpages` | 상주 페이지 수. **× 4KB = 실사용 메모리** |
-| `priority` | 낮을수록 먼저 죽는다. 백그라운드 앱이 낮다 |
-| `lifetimeMax` | 그 프로세스가 살아 있는 동안의 최대 사용량 |
-
-**내 앱이 `killed` 에 없어도 `rpages` 상위에 있으면 위험 신호다.**
-기기 메모리가 빠듯할 때 다음 차례가 된다.
-
-**확인한 것** — 실기기에서 `JetsamEvent` 7건을 찾아 그중 하나(245KB)를 `copy from` 으로
-회수하고, 위 파싱으로 `processes` 437개와 종료된 1건(`reason=per-process-limit`)을
-읽는 것까지 실제로 돌렸다.
+**참조 파일이 없으면** 위 두 가지 원칙만 지키고, 로그 위치는
+`~/Library/Logs/DiagnosticReports/*.ips` 와 `xcrun devicectl device info files --help` 로 찾는다.
 
 ---
 

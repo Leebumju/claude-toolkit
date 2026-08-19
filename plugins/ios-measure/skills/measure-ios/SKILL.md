@@ -228,141 +228,26 @@ public actor Counter {
 
 ## 4단계 — 수치를 꺼낸다
 
-### 앱을 직접 돌려서
+**명령은 `device-commands.md` 에 있다.** 이 파일과 같은 디렉토리에 있고,
+시뮬레이터·실기기·테스트 세 경로의 명령을 전부 담았다. **필요한 항목만 찾아 읽는다.**
 
-```sh
-# 콘솔을 파일로 받는다. 로그는 stderr 로 가는 경우가 많으니 둘 다 받는다
-xcrun simctl launch --stdout=/tmp/out.log --stderr=/tmp/err.log \
-    --terminate-running-process <UDID> <bundle-id>
+여기서 정할 것은 **어느 경로로 뽑느냐**다.
 
-# 계측을 환경변수로 켠다 — SIMCTL_CHILD_ 접두사가 앱 환경으로 전달된다
-SIMCTL_CHILD_PERF=1 xcrun simctl launch --console-pty <UDID> <bundle-id>
+| 무엇을 재나 | 어디서 | 참조 절 |
+|---|---|---|
+| 방향을 빠르게 훑는다 | 시뮬레이터 (`simctl`) | §1 |
+| **수치를 주장한다** | **실기기** (`devicectl`) | §2 |
+| 메모리 실사용 (계측 코드 없이) | 실기기 JetsamEvent | §5 |
+| 순수 로직 시간 | 테스트 + 결과 번들 | §6 |
 
-# 세기
-grep -c '\[PERF\] image-request' /tmp/err.log
-grep '\[PERF\]' /tmp/err.log | grep -oE '[0-9.]+ms' | sort -n | tail -5   # 최악 5개
-```
+**실기기에서는 콘솔 스트리밍에 기대지 않는다.** 계측을 파일로 쓰고 `copy from` 으로 꺼낸다 —
+스트리밍은 끊기고, 파일은 남는다.
 
-### 실기기에서 뽑을 때 — `devicectl`
+그리고 **메모리는 계측을 붙이지 않고도 실측된다** (§5). 앱에 코드를 한 줄도 넣지 않고
+실기기 실사용 중의 프로세스별 메모리를 읽을 수 있다. 계측값보다 나은 점이 있다 —
+계측은 내 조작 시나리오 안의 값이고, 그것은 사용자가 실제로 쓰던 상태다.
 
-`simctl` 은 시뮬레이터 전용이다. 실기기는 `devicectl` 을 쓴다 (Xcode 15+, `Device Hub` 의 CLI 기반).
-
-```sh
-# 기기 목록에서 Identifier 를 얻는다. State 가 connected 인 것만 쓸 수 있다
-xcrun devicectl list devices
-
-# 계측을 켜고 실기기에서 앱을 띄운다 — DEVICECTL_CHILD_ 접두사가 앱 환경으로 전달된다
-DEVICECTL_CHILD_PERF=1 xcrun devicectl device process launch \
-    --device <Identifier> <번들ID>
-
-# JSON 으로 직접 주입해도 된다 (이쪽을 쓰면 DEVICECTL_CHILD_ 는 무시된다)
-xcrun devicectl device process launch --device <Identifier> \
-    -e '{"PERF":"1"}' <번들ID>
-```
-
-**실기기에서는 콘솔 스트리밍에 기대지 않는다.** 대신 **계측을 파일로 쓰고 꺼낸다.**
-
-```sh
-# 앱이 Documents/perf.log 에 남기게 만들고, 조작이 끝난 뒤 꺼낸다
-xcrun devicectl device copy from --device <Identifier> \
-    --domain-type appDataContainer --domain-identifier <번들ID> \
-    --source Documents/perf.log --destination ./perf.log
-
-# 컨테이너에 무엇이 있는지 먼저 보려면
-xcrun devicectl device info files --device <Identifier> \
-    --domain-type appDataContainer --domain-identifier <번들ID> --recurse
-```
-
-**확인한 것** — 실기기에서 다음을 실제로 돌렸다.
-
-| 확인 | 결과 |
-|---|---|
-| `list devices` | 연결 상태 |
-| `info files --domain-type appDataContainer` | 컨테이너 453개 나열 |
-| `info files ... --subdirectory Documents` | **빈 디렉토리는 `0 files:` 를 낸다.** 실패가 아니다 |
-| `copy from` (앱이 쓴 파일) | 31바이트 파일 그대로 회수 |
-| `copy to` → `copy from` (`temporary` 도메인) | 왕복, 내용 그대로 |
-
-**`process launch` 는 실행해 보지 않았다** — 옵션 표면만 확인했다.
-앱이 파일을 쓰는 쪽은 `FileManager` 코드일 뿐이라 `devicectl` 과 무관하다.
-
-세 가지를 미리 알아 둔다.
-
-| 알아 둘 것 | 왜 |
-|---|---|
-| `Failed to load provisioning paramter list ... No provider was found` 가 **매 호출마다** 뜬다 | 무해하다. 실패로 판단하지 않는다 |
-| 기기가 잠겨 있으면 일부 명령이 막힌다 | `device info lockState` 로 먼저 본다 |
-| 화면 배율·크기는 기기마다 다르다 | `device info displays` 가 `bounds` 와 `pointScale` 을 준다. 셀 크기 계산의 전제다 |
-
-### 메모리는 계측 없이도 실측된다 — JetsamEvent
-
-**앱에 코드를 한 줄도 넣지 않고 실기기 메모리 사용량을 알 수 있다.**
-기기가 메모리 압박으로 프로세스를 죽일 때 남기는 `JetsamEvent` 리포트에
-**그 시점 기기 전체의 프로세스별 메모리 현황**이 들어 있다.
-
-```sh
-xcrun devicectl device info files --device <Identifier> \
-    --domain-type systemCrashLogs | grep JetsamEvent
-
-xcrun devicectl device copy from --device <Identifier> --domain-type systemCrashLogs \
-    --source JetsamEvent-<날짜>.ips --destination ./jetsam.ips
-```
-
-`.ips` 는 **JSON 문서 두 개**다 (첫 줄 헤더, 그 뒤 본문). 한 덩어리로 파싱하면 실패한다.
-
-```python
-body = json.loads(open('jetsam.ips').read().split('\n', 1)[1])
-for p in sorted(body['processes'], key=lambda x: x.get('rpages') or 0, reverse=True)[:5]:
-    print(p['name'], (p.get('rpages') or 0) * 4 / 1024, 'MB')   # rpages 는 4KB 페이지
-```
-
-**확인한 것** — 실기기에서 `JetsamEvent` 7건을 찾아 하나(245KB)를 회수하고,
-`processes` 437개의 `rpages` 를 읽는 것까지 실제로 돌렸다.
-
-이 수치가 값어치 있는 이유는 **실기기·실사용 중에 찍힌 값**이라는 것이다.
-계측으로 재는 값은 내 조작 시나리오 안의 값이고, 이것은 사용자가 실제로 쓰던 상태다.
-`lifetimeMax` 로 그 프로세스의 생존 중 최대 사용량도 볼 수 있다.
-
-### 실기기에서만 잴 수 있는 것
-
-시뮬레이터에서 재현되지 않는 조건을 인공적으로 만들 수 있다.
-
-```sh
-# 메모리 압박을 준다 — 캐시가 비워지는 경로를 재현한다
-xcrun devicectl device process sendMemoryWarning --device <Identifier> <pid 또는 번들ID>
-
-# 백그라운드 전환 재현
-xcrun devicectl device process suspend --device <Identifier> ...
-xcrun devicectl device process resume  --device <Identifier> ...
-
-# 화면 방향 (get / rotate / set)
-xcrun devicectl device orientation get --device <Identifier>
-```
-
-**이 셋은 존재만 확인했고 실행해 보지 않았다.** 쓸 때 동작을 먼저 확인한다.
-
-### 테스트에서 뽑을 때
-
-**`print` 는 `xcodebuild test` 표준 출력에 섞여 나오지 않는다.** 결과 번들에서 꺼낸다.
-
-```sh
-xcodebuild test -workspace App.xcworkspace -scheme App \
-    -destination 'platform=iOS Simulator,name=iPhone 17' \
-    -resultBundlePath /tmp/res.xcresult
-
-xcrun xcresulttool get log --path /tmp/res.xcresult --type console | grep '\[PERF\]'
-```
-
-`--type` 은 `build` / `action` / `console` 세 개고, 테스트 콘솔 출력은 `console` 이다.
-
-### 실행 횟수·통과 여부
-
-```sh
-xcodebuild test ... 2>&1 | grep 'Test run with'   # 실제 실행 개수
-```
-
-**테스트 파일을 새로 만들었으면 프로젝트를 재생성한다.** 프로젝트 생성 도구(Tuist 등)를 쓰는
-저장소에서 파일만 추가하면 타깃에 안 붙어서 **조용히 실행되지 않는다.** 개수를 눈으로 확인한다.
+**뽑은 수치를 기록 파일에 적는다.** 다음 단계가 그것과 대조한다.
 
 ---
 
