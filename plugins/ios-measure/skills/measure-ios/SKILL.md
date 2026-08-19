@@ -95,9 +95,22 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 전후 비교의 전제는 **같은 조작을 같은 조건에서 반복하는 것**이다. 이게 고정되지 않으면
 뒤의 수치 전부가 무의미하다.
 
+### 실기기가 기준선이다
+
+**시뮬레이터 수치로 실기기를 말하지 않는다.** 시뮬레이터는 맥 CPU·GPU 로 돌기 때문에
+계산은 빠르고 I/O 는 다르다. 그리고 **써멀 스로틀링·메모리 압박·실제 네트워크 지연이 없다.**
+
+| | 시뮬레이터 | 실기기 |
+|---|---|---|
+| 쓰는 때 | 개선 방향을 빠르게 훑을 때 | **수치를 주장할 때** |
+| 신뢰도 | 상대 비교만 (전/후) | 절대값을 말할 수 있다 |
+| 안 나오는 것 | 써멀·메모리 압박·저사양 기기 | — |
+
+보고에 쓸 수치는 실기기에서 뽑는다. 실기기가 없으면 **"시뮬레이터 측정" 이라고 적는다.**
+
 적어 둘 것:
 
-- 기기·OS 버전 (시뮬레이터인지 실기인지)
+- 기기·OS 버전 (시뮬레이터인지 실기인지 — **어느 쪽인지 반드시 적는다**)
 - 빌드 구성 (Debug / Release) — **Release 는 최적화가 켜져서 수치가 크게 다르다**
 - 데이터 규모 (목록 몇 건, 이미지 몇 장)
 - 조작 순서 (앱 실행 → 탭 2 → 스크롤 3회)
@@ -210,6 +223,66 @@ SIMCTL_CHILD_PERF=1 xcrun simctl launch --console-pty <UDID> <bundle-id>
 grep -c '\[PERF\] image-request' /tmp/err.log
 grep '\[PERF\]' /tmp/err.log | grep -oE '[0-9.]+ms' | sort -n | tail -5   # 최악 5개
 ```
+
+### 실기기에서 뽑을 때 — `devicectl`
+
+`simctl` 은 시뮬레이터 전용이다. 실기기는 `devicectl` 을 쓴다 (Xcode 15+, `Device Hub` 의 CLI 기반).
+
+```sh
+# 기기 목록에서 Identifier 를 얻는다. State 가 connected 인 것만 쓸 수 있다
+xcrun devicectl list devices
+
+# 계측을 켜고 실기기에서 앱을 띄운다 — DEVICECTL_CHILD_ 접두사가 앱 환경으로 전달된다
+DEVICECTL_CHILD_PERF=1 xcrun devicectl device process launch \
+    --device <Identifier> <번들ID>
+
+# JSON 으로 직접 주입해도 된다 (이쪽을 쓰면 DEVICECTL_CHILD_ 는 무시된다)
+xcrun devicectl device process launch --device <Identifier> \
+    -e '{"PERF":"1"}' <번들ID>
+```
+
+**실기기에서는 콘솔 스트리밍에 기대지 않는다.** 대신 **계측을 파일로 쓰고 꺼낸다.**
+
+```sh
+# 앱이 Documents/perf.log 에 남기게 만들고, 조작이 끝난 뒤 꺼낸다
+xcrun devicectl device copy from --device <Identifier> \
+    --domain-type appDataContainer --domain-identifier <번들ID> \
+    --source Documents/perf.log --destination ./perf.log
+
+# 컨테이너에 무엇이 있는지 먼저 보려면
+xcrun devicectl device info files --device <Identifier> \
+    --domain-type appDataContainer --domain-identifier <번들ID> --recurse
+```
+
+**확인한 것** — 실기기에서 `list devices` · `info files`(컨테이너 453개 나열) ·
+`copy to`/`copy from` 왕복(내용 그대로 회수)이 동작하는 것을 확인했다.
+**`process launch` 는 실행해 보지 않았다** — 옵션 표면만 확인했다.
+
+세 가지를 미리 알아 둔다.
+
+| 알아 둘 것 | 왜 |
+|---|---|
+| `Failed to load provisioning paramter list ... No provider was found` 가 **매 호출마다** 뜬다 | 무해하다. 실패로 판단하지 않는다 |
+| 기기가 잠겨 있으면 일부 명령이 막힌다 | `device info lockState` 로 먼저 본다 |
+| 화면 배율·크기는 기기마다 다르다 | `device info displays` 가 `bounds` 와 `pointScale` 을 준다. 셀 크기 계산의 전제다 |
+
+### 실기기에서만 잴 수 있는 것
+
+시뮬레이터에서 재현되지 않는 조건을 인공적으로 만들 수 있다.
+
+```sh
+# 메모리 압박을 준다 — 캐시가 비워지는 경로를 재현한다
+xcrun devicectl device process sendMemoryWarning --device <Identifier> <pid 또는 번들ID>
+
+# 백그라운드 전환 재현
+xcrun devicectl device process suspend --device <Identifier> ...
+xcrun devicectl device process resume  --device <Identifier> ...
+
+# 화면 방향 (get / rotate / set)
+xcrun devicectl device orientation get --device <Identifier>
+```
+
+**이 셋은 존재만 확인했고 실행해 보지 않았다.** 쓸 때 동작을 먼저 확인한다.
 
 ### 테스트에서 뽑을 때
 

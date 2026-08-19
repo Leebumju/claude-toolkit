@@ -128,14 +128,52 @@ EXC_BREAKPOINT (SIGTRAP) — Swift 런타임 트랩 계열
 **신호를 잘못 읽으면 절차 전체가 틀린다.** 로그가 없으면 신호도 모르는 것이고,
 그때는 "신호 미확인" 으로 적고 2단계 대신 재현부터 시도한다.
 
-크래시 로그 위치와 형식.
+### 크래시 로그를 어디서 가져오나
+
+**실기기가 기준이다.** 시뮬레이터에서 안 죽는 크래시가 실기기에서 죽는다 —
+써멀·메모리 압박·실제 네트워크 지연이 시뮬레이터에 없다.
 
 ```sh
-# 요즘 형식은 .ips (JSON 헤더 + 본문)
+# 맥에서 난 것 (시뮬레이터 포함). 요즘 형식은 .ips (JSON 헤더 + 본문)
 ls -t ~/Library/Logs/DiagnosticReports/*.ips | head -5
 
 # 시뮬레이터 진단 수집
 xcrun simctl diagnose
+```
+
+**실기기는 `devicectl` 로 가져온다.** Xcode 15 부터 있고, `Device Hub` 는 그 위에 얹은 UI 다.
+
+```sh
+# 1) 기기 목록에서 Identifier 를 얻는다. State 가 connected 인 것만 쓸 수 있다
+xcrun devicectl list devices
+
+# 2) 크래시 로그 목록
+xcrun devicectl device info files --device <Identifier> --domain-type systemCrashLogs
+
+# 3) 특정 로그를 꺼낸다
+xcrun devicectl device copy from --device <Identifier> --domain-type systemCrashLogs \
+    --source <파일명>.ips --destination ./crash.ips
+
+# 4) 원인이 안 좁혀지면 전체 진단 아카이브 (느리고 크다)
+xcrun devicectl device sysdiagnose --device <Identifier>
+```
+
+**확인한 것** — 실기기에서 2번이 `.ips` 321개를 나열했고, 3번 왕복(`copy to` → `copy from`)으로
+내용이 그대로 회수되는 것을 확인했다. **4번은 실행해 보지 않았다** (시간이 오래 걸린다).
+
+세 가지를 미리 알아 둔다.
+
+| 알아 둘 것 | 왜 |
+|---|---|
+| `Failed to load provisioning paramter list ... No provider was found` 경고가 **매 호출마다** 뜬다 | 무해하다. 명령은 정상 동작한다. 이 줄을 보고 실패로 판단하지 않는다 |
+| 기기가 잠겨 있으면 일부 명령이 막힌다 | `xcrun devicectl device info lockState --device <ID>` 로 먼저 본다 |
+| 도메인은 네 개다 | `systemCrashLogs` · `appDataContainer` · `appGroupDataContainer` · `temporary` |
+
+**앱이 스스로 남긴 로그는 `appDataContainer` 에서 꺼낸다.**
+
+```sh
+xcrun devicectl device info files --device <ID> \
+    --domain-type appDataContainer --domain-identifier <번들ID> --recurse
 ```
 
 ---

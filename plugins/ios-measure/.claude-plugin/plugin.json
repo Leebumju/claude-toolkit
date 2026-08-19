@@ -1,8 +1,14 @@
 {
   "name": "ios-measure",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "iOS 성능을 수치로 확인한다. 계측 코드는 릴리즈 빌드에 남지 않는다",
-  "author": { "name": "Leebumju" },
+  "author": {
+    "name": "Leebumju"
+  },
   "license": "MIT",
-  "keywords": ["ios", "performance", "measurement"]
+  "keywords": [
+    "ios",
+    "performance",
+    "measurement"
+  ]
 }
