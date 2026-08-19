@@ -59,7 +59,7 @@
       "name": "ios-modernize",
       "source": "./plugins/ios-modernize",
       "description": "레거시를 신규 패턴으로 옮기고, 모듈 경계를 세우고, 테스트가 닿을 자리를 만든다",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "author": {
         "name": "Leebumju"
       },
